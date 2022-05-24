@@ -1,0 +1,66 @@
+[tool.poetry]
+name = "sagemaker-shim"
+version = "0.0.2"
+description = "Adapts algorithms that implement the Grand Challenge inference API for running in SageMaker"
+authors = ["James Meakin <12661555+jmsmkn@users.noreply.github.com>"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/DIAGNijmegen/rse-sagemaker-shim"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+]
+
+[tool.poetry.scripts]
+sagemaker-shim = "sagemaker_shim.cli:cli"
+
+[tool.poetry.dependencies]
+# Only support once version of python at a time
+python = "^3.10,<3.11"
+fastapi = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+click = "*"
+boto3 = "*"
+
+[tool.poetry.dev-dependencies]
+pytest = "*"
+docker = "*"
+httpx = "*"
+pytest-randomly = "*"
+pytest-xdist = "*"
+pytest-cov = "*"
+staticx = "*"
+pyinstaller = "*"
+boto3-stubs = {extras = ["s3"], version = "*"}
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+profile = "black"
+known_first_party = ["sagemaker_shim", "tests"]
+line_length = 79
+
+[tool.black]
+line-length = 79
+target-version = ['py310']
+
+[tool.pytest.ini_options]
+markers = [
+    "container",
+    "registry",
+]
+python_files = "tests.py test_*.py *_tests.py"
+addopts = "--strict-markers --showlocals -n auto --dist loadscope --cov-branch --cov-report term-missing --cov=tests/ --cov=sagemaker_shim/"
+xfail_strict = true
+filterwarnings = [
+    # https://github.com/docker/docker-py/issues/2928
+    "ignore::DeprecationWarning:docker.utils.utils:52",
+    "ignore::DeprecationWarning:docker.utils.utils:53",
+]
+
+[tool.coverage.run]
+omit = [
+    "tests/batch_transform.py",
+]
