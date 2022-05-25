@@ -1,6 +1,4 @@
 import io
-import subprocess
-from pathlib import Path
 from time import sleep
 
 import docker
@@ -19,10 +17,6 @@ def _registry_helper(request) -> None:
 
 @pytest.fixture(scope="session")
 def registry():
-    subprocess.check_call(
-        ["make", "-C", Path(__file__).parent.parent / "dist", "all"]
-    )
-
     client = docker.from_env()
     registry = client.containers.run(
         image="registry:2.7",

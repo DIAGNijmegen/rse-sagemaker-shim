@@ -88,7 +88,11 @@ async def invoke(
 
 
 if __name__ == "__main__":
-    if getattr(sys, "frozen", False):
+    # https://pyinstaller.org/en/stable/runtime-information.html#run-time-information
+    we_are_bundled = getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
+
+    if we_are_bundled:
+        # https://pyinstaller.org/en/stable/runtime-information.html#using-sys-executable-and-sys-argv-0
         cli(sys.argv[1:])
     else:
         cli()

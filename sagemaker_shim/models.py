@@ -190,6 +190,23 @@ class InferenceTask(BaseModel):
 
         return proc_args
 
+    @property
+    def proc_env(self) -> dict[str, str]:
+        """The environment for the subprocess"""
+        env = os.environ.copy()
+
+        # Set LD_LIBRARY_PATH correctly, see
+        # https://pyinstaller.org/en/stable/runtime-information.html#ld-library-path-libpath-considerations
+        lp_key = "LD_LIBRARY_PATH"
+        lp_orig = env.get(lp_key + "_ORIG")
+
+        if lp_orig is not None:
+            env[lp_key] = lp_orig
+        else:
+            env.pop(lp_key, None)
+
+        return env
+
     async def invoke(self) -> InferenceResult:
         # TODO ensure only one algorithm is running
         # TODO ensure /input is empty
@@ -238,7 +255,10 @@ class InferenceTask(BaseModel):
         logger.debug(f"Calling {self.proc_args=}")
 
         process = await asyncio.create_subprocess_exec(
-            *self.proc_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            *self.proc_args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self.proc_env,
         )
 
         try:

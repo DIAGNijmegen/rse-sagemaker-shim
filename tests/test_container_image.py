@@ -1,6 +1,5 @@
-import subprocess
+from contextlib import contextmanager
 from importlib.metadata import version
-from pathlib import Path
 from time import sleep
 from uuid import uuid4
 
@@ -8,7 +7,12 @@ import docker
 import httpx
 import pytest
 
-from patch_image import get_image_config, get_new_env_vars, mutate_image
+from patch_image import (
+    encode_b64j,
+    get_image_config,
+    get_new_env_vars,
+    mutate_image,
+)
 from tests import __version__
 
 # Tests for compatability with
@@ -22,12 +26,8 @@ def _container_helper(request) -> None:
         request.getfixturevalue("container")  # pragma: no cover
 
 
-@pytest.fixture(scope="session")
-def container():
-    subprocess.check_call(
-        ["make", "-C", Path(__file__).parent.parent / "dist", "all"]
-    )
-
+@contextmanager
+def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
     client = docker.from_env()
     registry = client.containers.run(
         image="registry:2.7",
@@ -43,7 +43,6 @@ def container():
         registry.reload()  # required to get ports
         port = registry.ports["5000/tcp"][0]["HostPort"]
         repo = f"localhost:{port}"
-        base_image = "hello-world:latest"
         repo_tag = f"{repo}/{base_image}"
 
         # Pull the base image
@@ -55,6 +54,12 @@ def container():
 
         config = get_image_config(repo_tag=repo_tag)
         env_vars = get_new_env_vars(existing_config=config)
+
+        if cmd is not None:
+            env_vars["GRAND_CHALLENGE_COMPONENT_CMD_B64J"] = encode_b64j(
+                val=cmd
+            )
+
         new_tag = mutate_image(
             repo_tag=repo_tag,
             env_vars=env_vars,
@@ -69,7 +74,7 @@ def container():
             command="serve",
             # Containers must implement a web server that responds
             # to invocations and ping requests on port 8080.
-            ports={8080: 8080},
+            ports={8080: host_port},
             auto_remove=True,
             detach=True,
             # You can't use the init initializer as your entry point
@@ -87,6 +92,12 @@ def container():
             container.stop(timeout=0)
     finally:
         registry.stop(timeout=0)
+
+
+@pytest.fixture(scope="session")
+def container():
+    with _container() as c:
+        yield c
 
 
 @pytest.mark.container
@@ -133,3 +144,29 @@ def test_invocations_endpoint():
     assert response["return_code"] == 0
     assert response["outputs"] == []
     assert response["sagemaker_shim_version"] == version("sagemaker-shim")
+
+
+@pytest.mark.container
+def test_alpine_image():
+    # https://github.com/JonathonReinhart/staticx/issues/143
+    host_port = 8081
+    with _container(
+        base_image="python:3.10-alpine",
+        host_port=host_port,
+        cmd=["python", "-c", "print('hello_world')"],
+    ):
+        data = {
+            "pk": str(uuid4()),
+            "inputs": [],
+            "output_bucket_name": "test",
+            "output_prefix": "test",
+        }
+        response = httpx.post(
+            f"http://localhost:{host_port}/invocations", json=data
+        )
+
+        response = response.json()
+
+        assert response["return_code"] == 0
+        assert response["outputs"] == []
+        assert response["sagemaker_shim_version"] == version("sagemaker-shim")
