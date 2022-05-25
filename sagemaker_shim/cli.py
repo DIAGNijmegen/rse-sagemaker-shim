@@ -5,7 +5,6 @@ import logging.config
 import sys
 from functools import wraps
 from typing import Any, Callable, Iterable
-from uuid import UUID
 
 import click
 import uvicorn
@@ -40,7 +39,7 @@ def serve() -> None:
 @click.option(
     "--pk",
     required=True,
-    type=UUID,
+    type=str,
     help="The primary key of the task",
 )
 @click.option(
@@ -63,7 +62,7 @@ def serve() -> None:
 )
 @cli_coroutine
 async def invoke(
-    pk: UUID,
+    pk: str,
     input_file: Iterable[str],
     output_bucket_name: str,
     output_prefix: str,

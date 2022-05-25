@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 
+
 def pytest_sessionstart(session):
     """https://docs.pytest.org/en/latest/reference/reference.html#_pytest.hookspec.pytest_sessionstart"""
     subprocess.check_call(

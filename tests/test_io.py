@@ -75,7 +75,7 @@ def test_input_download(minio, tmp_path, monkeypatch):
     s3_client = boto3.client(
         "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
     )
-    pk = uuid4()
+    pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
         pk=pk,
@@ -139,7 +139,7 @@ def test_output_upload(minio, tmp_path, monkeypatch):
     s3_client = boto3.client(
         "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
     )
-    pk = uuid4()
+    pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
         pk=pk,

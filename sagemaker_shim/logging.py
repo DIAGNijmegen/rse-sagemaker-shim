@@ -16,7 +16,7 @@ class JSONFormatter(logging.Formatter):
 
         internal = getattr(record, "internal", True)
         task = getattr(record, "task", None)
-        task_pk = str(getattr(task, "pk", None))
+        task_pk = getattr(task, "pk", None)
 
         # TODO find a way to test the logging
 

@@ -128,7 +128,7 @@ def test_proc_args(cmd, entrypoint, expected, monkeypatch):
         encode_b64j(val=cmd),
     )
     j = InferenceTask(
-        pk=uuid4(),
+        pk=str(uuid4()),
         inputs=[],
         output_bucket_name="test",
         output_prefix="test",
@@ -154,7 +154,7 @@ def test_unset_cmd_and_entrypoint(envvars, monkeypatch):
         monkeypatch.setenv(var, encode_b64j(val=None))
 
     j = InferenceTask(
-        pk=uuid4(),
+        pk=str(uuid4()),
         inputs=[],
         output_bucket_name="test",
         output_prefix="test",

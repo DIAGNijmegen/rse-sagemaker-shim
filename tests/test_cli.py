@@ -1,5 +1,3 @@
-from uuid import uuid4
-
 from click.testing import CliRunner
 
 from patch_image import encode_b64j
@@ -32,7 +30,7 @@ def test_invocations_cli(tmp_path, monkeypatch):
         invoke,
         [
             "--pk",
-            str(uuid4()),
+            "myinferencetask",
             "--output-bucket-name",
             "test",
             "--output-prefix",

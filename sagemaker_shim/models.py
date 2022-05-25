@@ -9,7 +9,6 @@ from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
 
 import boto3
 from pydantic import BaseModel, validator
@@ -82,7 +81,7 @@ class InferenceResult(BaseModel):
 
 
 class InferenceTask(BaseModel):
-    pk: UUID
+    pk: str
     inputs: list[InferenceIO]
     output_bucket_name: str
     output_prefix: str
