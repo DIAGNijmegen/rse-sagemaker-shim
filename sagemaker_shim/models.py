@@ -8,10 +8,13 @@ from base64 import b64decode
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
 import boto3
 from pydantic import BaseModel, validator
+
+from sagemaker_shim.utils import safe_extract
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
@@ -31,6 +34,7 @@ class InferenceIO(BaseModel):
     relative_path: Path
     bucket_name: str
     bucket_key: str
+    decompress: bool = False
 
     class Config:
         frozen = True
@@ -49,12 +53,25 @@ class InferenceIO(BaseModel):
         )
 
         dest_file.parent.mkdir(exist_ok=True, parents=True)
-        with dest_file.open("wb") as f:
-            s3_client.download_fileobj(
-                Bucket=self.bucket_name,
-                Key=self.bucket_key,
-                Fileobj=f,
-            )
+
+        if self.decompress:
+            with TemporaryDirectory() as tmp_dir:
+                # TODO add tests
+                zipfile = Path(tmp_dir) / "src.zip"
+                with zipfile.open("wb") as f:
+                    s3_client.download_fileobj(
+                        Bucket=self.bucket_name,
+                        Key=self.bucket_key,
+                        Fileobj=f,
+                    )
+                safe_extract(src=zipfile, dest=dest_file.parent)
+        else:
+            with dest_file.open("wb") as f:
+                s3_client.download_fileobj(
+                    Bucket=self.bucket_name,
+                    Key=self.bucket_key,
+                    Fileobj=f,
+                )
 
     def upload(self, *, output_path: Path, s3_client: S3Client) -> None:
         src_file = str(self.local_file(path=output_path))

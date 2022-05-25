@@ -68,6 +68,7 @@ async def invoke(
     output_prefix: str,
 ) -> None:
     logging.config.dictConfig(LOGGING_CONFIG)
+    logger.debug("invoke called")
 
     inputs = []
     for input_json in input_file:
@@ -80,6 +81,8 @@ async def invoke(
         output_bucket_name=output_bucket_name,
         output_prefix=output_prefix,
     )
+
+    logger.debug(f"{task=}")
 
     result = await task.invoke()
 
