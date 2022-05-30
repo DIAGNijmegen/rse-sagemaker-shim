@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import boto3
 from pydantic import BaseModel, validator
 
+from sagemaker_shim.logging import STDOUT_LEVEL
 from sagemaker_shim.utils import safe_extract
 
 if TYPE_CHECKING:
@@ -280,10 +281,10 @@ class InferenceTask(BaseModel):
         try:
             await asyncio.gather(
                 self._stream_to_external(
-                    stream=process.stdout, level=logging.INFO
+                    stream=process.stdout, level=STDOUT_LEVEL
                 ),
                 self._stream_to_external(
-                    stream=process.stderr, level=logging.WARNING
+                    stream=process.stderr, level=STDOUT_LEVEL + 10
                 ),
             )
         except Exception:
