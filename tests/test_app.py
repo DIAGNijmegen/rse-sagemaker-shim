@@ -3,9 +3,9 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from patch_image import encode_b64j
 from sagemaker_shim.app import app
 from sagemaker_shim.models import InferenceTask
+from tests.utils import encode_b64j
 
 
 @pytest.fixture

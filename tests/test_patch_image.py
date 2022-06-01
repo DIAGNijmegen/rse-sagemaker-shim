@@ -4,8 +4,8 @@ from time import sleep
 import docker
 import pytest
 
-from patch_image import get_image_config, get_new_env_vars, mutate_image
 from tests import __version__
+from tests.utils import get_image_config, get_new_env_vars, mutate_image
 
 
 @pytest.fixture(autouse=True)

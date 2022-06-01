@@ -7,13 +7,13 @@ import docker
 import httpx
 import pytest
 
-from patch_image import (
+from tests import __version__
+from tests.utils import (
     encode_b64j,
     get_image_config,
     get_new_env_vars,
     mutate_image,
 )
-from tests import __version__
 
 # Tests for compatability with
 # https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-batch-code.html

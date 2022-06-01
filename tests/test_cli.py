@@ -1,7 +1,7 @@
 from click.testing import CliRunner
 
-from patch_image import encode_b64j
 from sagemaker_shim.cli import invoke
+from tests.utils import encode_b64j
 
 
 def test_invocations_cli(tmp_path, monkeypatch):

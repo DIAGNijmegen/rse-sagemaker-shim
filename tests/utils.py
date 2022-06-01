@@ -7,9 +7,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-# TODO on the Grand Challenge side
-# 1. Upgrade `crane`
-
 CRANE_COMMAND = "dist/crane"
 
 
@@ -22,7 +19,6 @@ def get_image_config(*, repo_tag: str) -> Any:
         [CRANE_COMMAND, "config", repo_tag],
         capture_output=True,
     )
-    # TODO handle not found etc
     return json.loads(output.stdout.decode("utf-8"))
 
 
@@ -85,14 +81,11 @@ def mutate_image(
                 new_tag,
                 "--append",
                 str(new_layer),
-            ]
-            + list(
-                itertools.chain(
+                *itertools.chain(
                     *[["--env", f"{k}={v}"] for k, v in env_vars.items()]
-                )
-            ),
+                ),
+            ],
             capture_output=True,
         )
 
-    # TODO handle failures etc
     return new_tag
