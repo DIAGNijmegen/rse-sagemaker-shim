@@ -9,7 +9,7 @@ This repo contains a library that adapts algorithms that implement the Grand Cha
 
 The application contains:
 
-- A `click` cli client with options to launch a web server or invoke a job directly
+- A `click` cli client with options to launch a web server
 - A `fastapi` web server that implements the SageMaker endpoints
 - and `pydantic` models that interface between S3, and run the original inference jobs.
 
@@ -56,23 +56,8 @@ There are three endpoints:
     }
   ```
 
-  The endpoint will return an object containing the return code of the subprocess,
+  The endpoint will return an object containing the return code of the subprocess in `response["return_code"]`,
   and any outputs will be placed in the output bucket at the output prefix.
-
-### `sagemaker-shim invoke`
-
-This allows you to run an invocation directly.
-It takes similar arguments as above, with the inputs json encoded:
-
-```console
-sagemaker-shim invoke \
-  --pk unique-test-id \
-  --input-file '{"relative_path": "interface/path","bucket_name": "name-of-input-bucket","bucket_key": "/path/to/input/file/in/bucket","decompress": false}' \
-  --output-bucket-name name-of-output-bucket \
-  --output-prefix /prefix/of/output/files
-```
-
-The `--input-file` option can be repeated.
 
 ### Patching an Existing Container
 
