@@ -112,8 +112,6 @@ class InferenceTask(BaseModel):
         if not v:
             raise ValueError("Prefix cannot be blank")
 
-        v = v.lstrip("/")
-
         if v[-1] != "/":
             v += "/"
 
