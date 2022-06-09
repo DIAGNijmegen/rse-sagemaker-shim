@@ -19,7 +19,7 @@ It is able to adapt any container, including ones based on `scratch` or `alpine`
 ## Usage
 
 The binary is designed to be added to an existing container image that implements the Grand Challenge API.
-On Grand Challenge this happens automatically by using [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/doc/crane_mutate.md) to add the binary, directories and environment variables to each comtainer image.
+On Grand Challenge this happens automatically by using [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/doc/crane_mutate.md) to add the binary, directories and environment variables to each container image.
 The binary itself will:
 
 1. Download the input files from the provided locations on S3 to `/input`, optionally decompressing the inputs.
