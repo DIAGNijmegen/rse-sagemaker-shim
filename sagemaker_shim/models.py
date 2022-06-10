@@ -8,6 +8,7 @@ from base64 import b64decode
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
+from shutil import rmtree
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,7 @@ else:
 
 
 logger = logging.getLogger(__name__)
+lock = asyncio.Lock()
 
 BUCKET_NAME_REGEX = re.compile(r"^[a-zA-Z0-9.\-_]{1,255}$")
 BUCKET_ARN_REGEX = re.compile(
@@ -223,21 +225,36 @@ class InferenceTask(BaseModel):
         return env
 
     async def invoke(self) -> InferenceResult:
-        # TODO ensure only one algorithm is running
-        # TODO ensure /input is empty
-        outputs = set()
+        async with lock:
+            self.clean_io()
 
-        self.download_input()
+            try:
+                self.download_input()
 
-        return_code = await self.execute()
+                return_code = await self.execute()
 
-        if return_code == 0:
-            outputs = self.upload_output()
+                if return_code == 0:
+                    outputs = self.upload_output()
+                else:
+                    outputs = set()
 
-        # TODO get algorithm runtime
-        # TODO cleanup /input and /output
+                return InferenceResult(
+                    return_code=return_code, outputs=outputs
+                )
+            finally:
+                self.clean_io()
 
-        return InferenceResult(return_code=return_code, outputs=outputs)
+    def clean_io(self) -> None:
+        self._clean_path(self.input_path)
+        self._clean_path(self.output_path)
+
+    @staticmethod
+    def _clean_path(path: Path) -> None:
+        for f in path.glob("**/*"):
+            if f.is_file():
+                f.unlink()
+            elif f.is_dir():
+                rmtree(f)
 
     def download_input(self) -> None:
         for input_file in self.inputs:

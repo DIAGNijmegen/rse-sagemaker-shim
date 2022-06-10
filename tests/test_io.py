@@ -192,3 +192,15 @@ def test_output_upload(minio, tmp_path, monkeypatch):
 
     assert root_f.read() == root_data
     assert sub_f.read() == sub_data
+
+
+def test_folder_cleanup(tmp_path):
+    for dir in ["test", "nested/test"]:
+        (tmp_path / dir).mkdir(parents=True)
+
+    for f in ["test", ".test", "test/test", "test/.test", "nested/test/.test"]:
+        (tmp_path / f).touch()
+
+    InferenceTask._clean_path(path=tmp_path)
+
+    assert [*tmp_path.rglob("**/*")] == []
