@@ -1,9 +1,12 @@
+import logging.config
+from copy import deepcopy
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
 from sagemaker_shim.app import app
+from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import InferenceTask
 from tests.utils import encode_b64j
 
@@ -32,12 +35,14 @@ def test_container_responds_to_execution_parameters(client):
     }
 
 
-def test_invocations_endpoint(client, tmp_path, monkeypatch):
+def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys):
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
     # /invocations endpoint.
+
+    pk = str(uuid4())
     data = {
-        "pk": str(uuid4()),
+        "pk": pk,
         "inputs": [],
         "output_bucket_name": "test",
         "output_prefix": "test",
@@ -51,7 +56,9 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch):
 
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J",
-        encode_b64j(val=["echo", "hello world"]),
+        encode_b64j(
+            val=["sh", "-c", "echo hellostdout && echo hellostderr 1>&2"]
+        ),
     )
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
@@ -62,7 +69,26 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch):
         str(output_path),
     )
 
+    debug_log = deepcopy(LOGGING_CONFIG)
+    debug_log["root"]["level"] = "DEBUG"
+    logging.config.dictConfig(debug_log)
+
     response = client.post("/invocations", json=data)
+
+    # The logs need to be interprable by grand challenge
+    captured = capsys.readouterr()
+    assert (
+        '{"log": "hellostdout", "level": "INFO", "source": "stdout", '
+        f'"internal": false, "task": "{pk}"}}\n'
+    ) in captured.out
+    assert (
+        '{"log": "return_code=0", "level": "DEBUG", "source": "stdout", '
+        '"internal": true, "task": null}'
+    ) in captured.out
+    assert captured.err == (
+        '{"log": "hellostderr", "level": "WARNING", "source": "stderr", '
+        f'"internal": false, "task": "{pk}"}}\n'
+    )
 
     # To obtain inferences, Amazon SageMaker sends a POST request to the
     # inference container. The POST request body contains data from

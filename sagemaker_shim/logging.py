@@ -31,8 +31,6 @@ class JSONFormatter(logging.Formatter):
         task = getattr(record, "task", None)
         task_pk = getattr(task, "pk", None)
 
-        # TODO find a way to test the logging
-
         return "\n".join(
             json.dumps(
                 {

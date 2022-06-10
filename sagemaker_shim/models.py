@@ -71,7 +71,6 @@ class InferenceIO(BaseModel):
 
         if self.decompress:
             with TemporaryDirectory() as tmp_dir:
-                # TODO add tests
                 zipfile = Path(tmp_dir) / "src.zip"
                 with zipfile.open("wb") as f:
                     s3_client.download_fileobj(
@@ -336,7 +335,6 @@ class InferenceTask(BaseModel):
         self, *, stream: asyncio.StreamReader | None, level: int
     ) -> None:
         """Send the contents of an io stream to the external logs"""
-        # TODO find a way to test the logging
         if stream is None:
             return
 
