@@ -36,7 +36,6 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch):
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
     # /invocations endpoint.
-    # TODO use FactoryBoy for tasks
     data = {
         "pk": str(uuid4()),
         "inputs": [],

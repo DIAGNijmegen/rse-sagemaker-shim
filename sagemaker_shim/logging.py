@@ -10,6 +10,14 @@ STDOUT_LEVEL = logging.INFO
 
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        """
+        Create a structured log message
+
+        CloudWatch does not separate log streams, so we use source
+        to differentiate between stdout and stderr.
+        Internal allows us to differentiate between logs from
+        this application, and logs from the invocation subprocess.
+        """
         message = super().format(record=record)
 
         # We need to explicitly add the source as an annotation
@@ -40,6 +48,8 @@ class JSONFormatter(logging.Formatter):
 
 
 class StdStreamFilter(logging.Filter):
+    """Split stdout and stderr streams"""
+
     def __init__(self, *args: Any, stdout: bool, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.__stdout = stdout

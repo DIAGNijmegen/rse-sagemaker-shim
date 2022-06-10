@@ -33,7 +33,16 @@ BUCKET_ARN_REGEX = re.compile(
 )
 
 
+def validate_bucket_name(v: str) -> str:
+    if BUCKET_NAME_REGEX.match(v) or BUCKET_ARN_REGEX.match(v):
+        return v
+    else:
+        raise ValueError("Invalid bucket name")
+
+
 class InferenceIO(BaseModel):
+    """A single input or output file for an inference job"""
+
     relative_path: Path
     bucket_name: str
     bucket_key: str
@@ -42,13 +51,16 @@ class InferenceIO(BaseModel):
     class Config:
         frozen = True
 
-    # TODO validation of attrs
+    @validator("bucket_name")
+    def validate_bucket_name(cls, v: str) -> str:  # noqa:B902
+        return validate_bucket_name(v)
 
     def local_file(self, path: Path) -> Path:
-        # TODO handle images and non relative_paths
+        """The local location of the file"""
         return path / self.relative_path
 
     def download(self, *, input_path: Path, s3_client: S3Client) -> None:
+        """Download this file from s3"""
         dest_file = self.local_file(path=input_path)
 
         logger.info(
@@ -77,13 +89,13 @@ class InferenceIO(BaseModel):
                 )
 
     def upload(self, *, output_path: Path, s3_client: S3Client) -> None:
+        """Upload this file to s3"""
         src_file = str(self.local_file(path=output_path))
 
         logger.info(
             f"Uploading {src_file=} to {self.bucket_name=} with {self.bucket_key=}"
         )
 
-        # TODO limit file size
         s3_client.upload_file(
             Filename=src_file,
             Bucket=self.bucket_name,
@@ -121,13 +133,11 @@ class InferenceTask(BaseModel):
 
     @validator("output_bucket_name")
     def validate_bucket_name(cls, v: str) -> str:  # noqa:B902
-        if BUCKET_NAME_REGEX.match(v) or BUCKET_ARN_REGEX.match(v):
-            return v
-        else:
-            raise ValueError("Invalid bucket name")
+        return validate_bucket_name(v)
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
+        """JSON decode a base64 string"""
         if encoded is None:
             return None
         else:
@@ -138,6 +148,7 @@ class InferenceTask(BaseModel):
     @classmethod
     @property
     def cmd(cls) -> Any:
+        """The original command for the subprocess"""
         cmd = cls.decode_b64j(
             encoded=os.environ.get("GRAND_CHALLENGE_COMPONENT_CMD_B64J")
         )
@@ -147,6 +158,7 @@ class InferenceTask(BaseModel):
     @classmethod
     @property
     def entrypoint(cls) -> Any:
+        """The original entrypoint for the subprocess"""
         entrypoint = cls.decode_b64j(
             encoded=os.environ.get("GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J")
         )
@@ -156,6 +168,7 @@ class InferenceTask(BaseModel):
     @classmethod
     @property
     def input_path(cls) -> Path:
+        """Local path where the subprocess is expected to read its input files"""
         input_path = Path(
             os.environ.get("GRAND_CHALLENGE_COMPONENT_INPUT_PATH", "/input")
         )
@@ -165,6 +178,7 @@ class InferenceTask(BaseModel):
     @classmethod
     @property
     def output_path(cls) -> Path:
+        """Local path where the subprocess is expected to write its files"""
         output_path = Path(
             os.environ.get("GRAND_CHALLENGE_COMPONENT_OUTPUT_PATH", "/output")
         )
@@ -225,6 +239,7 @@ class InferenceTask(BaseModel):
         return env
 
     async def invoke(self) -> InferenceResult:
+        """Run the inference on a single case"""
         async with lock:
             self.clean_io()
 
@@ -245,11 +260,13 @@ class InferenceTask(BaseModel):
                 self.clean_io()
 
     def clean_io(self) -> None:
+        """Clean all contents of input and output folders"""
         self._clean_path(self.input_path)
         self._clean_path(self.output_path)
 
     @staticmethod
     def _clean_path(path: Path) -> None:
+        """Removes contents of a directory, keeping the parent"""
         for f in path.glob("**/*"):
             if f.is_file():
                 f.unlink()
@@ -257,12 +274,14 @@ class InferenceTask(BaseModel):
                 rmtree(f)
 
     def download_input(self) -> None:
+        """Download all the inputs to the input path"""
         for input_file in self.inputs:
             input_file.download(
                 input_path=self.input_path, s3_client=self._s3_client
             )
 
     def upload_output(self) -> set[InferenceIO]:
+        """Upload all the outputs from the output path to s3"""
         output_path = self.output_path
         outputs: set[InferenceIO] = set()
 
@@ -284,6 +303,7 @@ class InferenceTask(BaseModel):
         return outputs
 
     async def execute(self) -> int:
+        """Run the original entrypoint and command in a subprocess"""
         logger.debug(f"Calling {self.proc_args=}")
 
         process = await asyncio.create_subprocess_exec(
@@ -315,6 +335,7 @@ class InferenceTask(BaseModel):
     async def _stream_to_external(
         self, *, stream: asyncio.StreamReader | None, level: int
     ) -> None:
+        """Send the contents of an io stream to the external logs"""
         # TODO find a way to test the logging
         if stream is None:
             return
@@ -331,6 +352,7 @@ class InferenceTask(BaseModel):
             )
 
     def log_external(self, *, level: int, msg: str) -> None:
+        """Send a message to the external logger"""
         logger.log(
             level=level, msg=msg, extra={"internal": False, "task": self}
         )

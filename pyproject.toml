@@ -63,4 +63,5 @@ filterwarnings = [
 [tool.coverage.run]
 omit = [
     "tests/batch_transform.py",
+    "sagemaker_shim/cli.py", # This is covered by docker integration tests
 ]
