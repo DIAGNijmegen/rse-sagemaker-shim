@@ -19,7 +19,7 @@ from sagemaker_shim.logging import STDOUT_LEVEL
 from sagemaker_shim.utils import safe_extract
 
 if TYPE_CHECKING:
-    from mypy_boto3_s3 import S3Client
+    from mypy_boto3_s3 import S3Client  # pragma: no cover
 else:
     S3Client = object
 

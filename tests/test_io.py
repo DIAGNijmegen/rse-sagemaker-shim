@@ -5,6 +5,7 @@ from pathlib import Path
 from time import sleep
 from typing import NamedTuple
 from uuid import uuid4
+from zipfile import ZipFile
 
 import boto3
 import docker
@@ -133,6 +134,57 @@ def test_input_download(minio, tmp_path, monkeypatch):
 
     assert created_root == root_data
     assert created_sub == sub_data
+
+
+def test_input_decompress(minio, tmp_path, monkeypatch):
+    s3_client = boto3.client(
+        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+    )
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    task = InferenceTask(
+        pk=pk,
+        inputs=[
+            InferenceIO(
+                bucket_name=minio.input_bucket_name,
+                bucket_key=f"{prefix}/sub/predictions.zip",
+                relative_path=Path("sub/predictions.zip"),
+                decompress=True,
+            ),
+        ],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=str(prefix),
+    )
+
+    # Prep input bucket
+    sub_f = io.BytesIO()
+    with ZipFile(file=sub_f, mode="w") as zip:
+        zip.writestr("sdsdaf/test.txt", str(pk))
+    sub_f.seek(0)
+    s3_client.upload_fileobj(
+        sub_f, minio.input_bucket_name, f"{prefix}/sub/predictions.zip"
+    )
+
+    response = s3_client.list_objects_v2(
+        Bucket=minio.input_bucket_name,
+        Prefix=prefix,
+    )
+    assert {f["Key"] for f in response["Contents"]} == {
+        f"tasks/{task.pk}/sub/predictions.zip",
+    }
+
+    # Download the data
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
+        str(tmp_path),
+    )
+    task.download_input()
+
+    # Check
+    with open(tmp_path / "sub" / "test.txt") as f:
+        created_sub = f.read()
+
+    assert created_sub == str(pk)
 
 
 def test_output_upload(minio, tmp_path, monkeypatch):
