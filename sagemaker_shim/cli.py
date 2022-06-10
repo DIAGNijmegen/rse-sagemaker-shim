@@ -30,7 +30,7 @@ def cli() -> None:
 @cli.command(short_help="Start the model server")
 def serve() -> None:
     logging.config.dictConfig(LOGGING_CONFIG)
-    uvicorn.run(app=app, host="0.0.0.0", port=8080, log_config=None)
+    uvicorn.run(app=app, host="0.0.0.0", port=8080, log_config=None, workers=1)
 
 
 if __name__ == "__main__":

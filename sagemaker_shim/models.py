@@ -240,24 +240,24 @@ class InferenceTask(BaseModel):
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""
-        async with lock:
+        await asyncio.wait_for(lock.acquire(), timeout=1.0)
+        try:
             self.clean_io()
+            self.download_input()
 
+            return_code = await self.execute()
+
+            if return_code == 0:
+                outputs = self.upload_output()
+            else:
+                outputs = set()
+
+            return InferenceResult(return_code=return_code, outputs=outputs)
+        finally:
             try:
-                self.download_input()
-
-                return_code = await self.execute()
-
-                if return_code == 0:
-                    outputs = self.upload_output()
-                else:
-                    outputs = set()
-
-                return InferenceResult(
-                    return_code=return_code, outputs=outputs
-                )
-            finally:
                 self.clean_io()
+            finally:
+                lock.release()
 
     def clean_io(self) -> None:
         """Clean all contents of input and output folders"""

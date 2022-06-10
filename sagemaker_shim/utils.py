@@ -67,9 +67,5 @@ def safe_extract(*, src: Path, dest: Path) -> None:
                 with zf.open(member["src"], "r") as fs, open(
                     file_dest, "wb"
                 ) as fd:
-                    while True:
-                        chunk = fs.read(1024)
-                        if not chunk:
-                            break
-
+                    while chunk := fs.read(8192):
                         fd.write(chunk)
