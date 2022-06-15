@@ -14,14 +14,6 @@ from sagemaker_shim.logging import LOGGING_CONFIG
 logger = logging.getLogger(__name__)
 
 
-def cli_coroutine(f: Callable[..., Any]) -> Callable[..., Any]:
-    @wraps(f)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        return asyncio.run(f(*args, **kwargs))
-
-    return wrapper
-
-
 @click.group()
 def cli() -> None:
     pass
