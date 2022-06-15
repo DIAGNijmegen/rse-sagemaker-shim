@@ -1,17 +1,11 @@
-import asyncio
-import logging
 import logging.config
 import sys
-from functools import wraps
-from typing import Any, Callable
 
 import click
 import uvicorn
 
 from sagemaker_shim.app import app
 from sagemaker_shim.logging import LOGGING_CONFIG
-
-logger = logging.getLogger(__name__)
 
 
 @click.group()
