@@ -1,4 +1,5 @@
 import logging.config
+from asyncio.streams import _DEFAULT_LIMIT
 from copy import deepcopy
 from uuid import uuid4
 
@@ -54,10 +55,21 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys):
     input_path.mkdir()
     output_path.mkdir()
 
+    bigfile = tmp_path / "test.txt"
+    with open(bigfile, "w") as f:
+        # asyncio has a limit to the size of log lines,
+        # Anything above this will not be logged
+        f.write("a" * (_DEFAULT_LIMIT + 1))
+        f.write("\n")
+
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J",
         encode_b64j(
-            val=["sh", "-c", "echo hellostdout && echo hellostderr 1>&2"]
+            val=[
+                "sh",
+                "-c",
+                f"cat {bigfile} && echo hellostdout && echo hellostderr 1>&2",
+            ]
         ),
     )
     monkeypatch.setenv(
@@ -86,6 +98,9 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys):
         '"internal": true, "task": null}'
     ) in captured.out
     assert captured.err == (
+        '{"log": "WARNING: A log line was skipped as it was too long", '
+        '"level": "WARNING", "source": "stderr", "internal": false, '
+        f'"task": "{pk}"}}\n'
         '{"log": "hellostderr", "level": "WARNING", "source": "stderr", '
         f'"internal": false, "task": "{pk}"}}\n'
     )
