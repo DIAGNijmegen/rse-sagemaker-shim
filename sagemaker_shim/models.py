@@ -339,7 +339,14 @@ class InferenceTask(BaseModel):
             return
 
         while True:
-            line = await stream.readline()
+            try:
+                line = await stream.readline()
+            except ValueError:
+                self.log_external(
+                    level=logging.WARNING,
+                    msg="WARNING: A log line was skipped as it was too long",
+                )
+                continue
 
             if not line:
                 break
