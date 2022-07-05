@@ -29,6 +29,23 @@ The binary itself will:
     - `GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J`: the original `entrypoint` of the container, json encoded as a base64 string.
 1. Upload the contents of `/output` to the given output S3 bucket and prefix.
 
+### Logging
+
+CloudWatch does not offer separation of `stdout` and `stderr` by default.
+`sagemaker-shim` includes a logging filter and formatter that creates structured logs from the application and subprocess.
+This allows grand challenge to separate out internal, external, stdout and stderr streams.
+These structured logs are JSON objects with the format:
+
+```js
+{
+  "log": "",  // The original log message
+  "level": "CRITICAL" | "ERROR" | "WARNING" | "INFO" | "DEBUG" | "NOTSET",  // The severity level of the log
+  "source": "stdout" | "stderr",   // The source stream
+  "internal": true | false,  // Whether the source of the log is from sagemaker shim or the subprocess
+  "task": "" | null,  // The ID of the task
+}
+```
+
 ### `sagemaker-shim serve`
 
 This starts the webserver on http://0.0.0.0:8080 which implements the [SageMaker API](https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-batch-code.html).
