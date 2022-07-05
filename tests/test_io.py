@@ -1,4 +1,5 @@
 import io
+import logging.config
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,6 +13,7 @@ import docker
 import pytest
 from docker.models.containers import Container
 
+from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import InferenceIO, InferenceTask
 
 
@@ -185,6 +187,114 @@ def test_input_decompress(minio, tmp_path, monkeypatch):
         created_sub = f.read()
 
     assert created_sub == str(pk)
+
+
+def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
+    s3_client = boto3.client(
+        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+    )
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    data = {
+        "pk": pk,
+        "inputs": [
+            {
+                "bucket_name": minio.input_bucket_name,
+                "bucket_key": f"{prefix}/sub/dodgy.zip",
+                "relative_path": "sub/dodgy.zip",
+                "decompress": True,
+            }
+        ],
+        "output_bucket_name": "test",
+        "output_prefix": "test",
+    }
+
+    input_path = tmp_path / "input"
+    output_path = tmp_path / "output"
+
+    input_path.mkdir()
+    output_path.mkdir()
+
+    # Prep input bucket
+    sub_f = io.BytesIO()
+    with ZipFile(file=sub_f, mode="w") as zip:
+        zip.writestr("../foo.txt", "hello!")
+        zip.writestr("../../foo.txt", "hello!")
+    sub_f.seek(0)
+    s3_client.upload_fileobj(
+        sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
+        str(input_path),
+    )
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    response = client.post("/invocations", json=data)
+
+    response = response.json()
+    assert response["return_code"] == 1
+
+    captured = capsys.readouterr()
+    assert captured.err == (
+        '{"log": "Zip file contains invalid paths", "level": "ERROR", '
+        f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
+    )
+
+
+def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
+    s3_client = boto3.client(
+        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+    )
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    data = {
+        "pk": pk,
+        "inputs": [
+            {
+                "bucket_name": minio.input_bucket_name,
+                "bucket_key": f"{prefix}/sub/dodgy.zip",
+                "relative_path": "sub/dodgy.zip",
+                "decompress": True,
+            }
+        ],
+        "output_bucket_name": "test",
+        "output_prefix": "test",
+    }
+
+    input_path = tmp_path / "input"
+    output_path = tmp_path / "output"
+
+    input_path.mkdir()
+    output_path.mkdir()
+
+    # Prep input bucket
+    sub_data = os.urandom(8)
+    sub_f = io.BytesIO(sub_data)
+    sub_f.seek(0)
+    s3_client.upload_fileobj(
+        sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
+        str(input_path),
+    )
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    response = client.post("/invocations", json=data)
+
+    response = response.json()
+    assert response["return_code"] == 1
+
+    captured = capsys.readouterr()
+    assert captured.err == (
+        '{"log": "Input zip file could not be extracted", "level": "ERROR", '
+        f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
+    )
 
 
 def test_output_upload(minio, tmp_path, monkeypatch):

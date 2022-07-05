@@ -11,10 +11,12 @@ from pathlib import Path
 from shutil import rmtree
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
+from zipfile import BadZipFile
 
 import boto3
 from pydantic import BaseModel, validator
 
+from sagemaker_shim.exceptions import ZipExtractionError
 from sagemaker_shim.logging import STDOUT_LEVEL
 from sagemaker_shim.utils import safe_extract
 
@@ -78,7 +80,12 @@ class InferenceIO(BaseModel):
                         Key=self.bucket_key,
                         Fileobj=f,
                     )
-                safe_extract(src=zipfile, dest=dest_file.parent)
+                try:
+                    safe_extract(src=zipfile, dest=dest_file.parent)
+                except BadZipFile as error:
+                    raise ZipExtractionError(
+                        "Input zip file could not be extracted"
+                    ) from error
         else:
             with dest_file.open("wb") as f:
                 s3_client.download_fileobj(
@@ -242,7 +249,12 @@ class InferenceTask(BaseModel):
         await asyncio.wait_for(lock.acquire(), timeout=1.0)
         try:
             self.clean_io()
-            self.download_input()
+
+            try:
+                self.download_input()
+            except ZipExtractionError as error:
+                self.log_external(level=logging.ERROR, msg=str(error))
+                return InferenceResult(return_code=1, outputs=[])
 
             return_code = await self.execute()
 

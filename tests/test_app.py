@@ -4,17 +4,10 @@ from copy import deepcopy
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
 
-from sagemaker_shim.app import app
 from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import InferenceTask
 from tests.utils import encode_b64j
-
-
-@pytest.fixture
-def client():
-    return TestClient(app=app)
 
 
 def test_container_responds_to_ping(client):
