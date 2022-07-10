@@ -95,7 +95,7 @@ LOGGING_CONFIG = {
         },
     },
     "root": {
-        "level": os.environ.get("LOGLEVEL", "INFO").upper(),
+        "level": os.environ.get("LOG_LEVEL", "INFO").upper(),
         "handlers": ["console_stdout", "console_stderr"],
     },
 }
