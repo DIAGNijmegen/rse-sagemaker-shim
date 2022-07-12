@@ -107,6 +107,54 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys):
     assert response["return_code"] == 0
 
 
+def test_invoke_with_unclearable_input(
+    client, tmp_path, monkeypatch, capsys, mocker
+):
+    pk = str(uuid4())
+    data = {
+        "pk": pk,
+        "inputs": [],
+        "output_bucket_name": "test",
+        "output_prefix": "test",
+    }
+
+    input_path = tmp_path / "input"
+    output_path = tmp_path / "output"
+
+    input_path.mkdir()
+    output_path.mkdir()
+
+    # Prep input bucket
+    (input_path / "undeletable").mkdir()
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
+        str(input_path),
+    )
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    def side_effect(path, ignore_errors):
+        if not ignore_errors:
+            raise PermissionError("Permission denied: 'filename'")
+
+    mocker.patch(
+        "sagemaker_shim.models.InferenceTask._clean_path",
+        side_effect=side_effect,
+    )
+
+    response = client.post("/invocations", json=data)
+    response = response.json()
+    assert response["return_code"] == 1
+
+    captured = capsys.readouterr()
+    assert captured.err == (
+        f"{{\"log\": \"Could not clean '{input_path}' and/or '/output' "
+        'directories: Permission denied: \'filename\'", "level": "ERROR", '
+        f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
+    )
+
+
 @pytest.mark.parametrize(
     "cmd,entrypoint,expected",
     (
