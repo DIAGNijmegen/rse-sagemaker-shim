@@ -246,9 +246,24 @@ class InferenceTask(BaseModel):
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""
+
         await asyncio.wait_for(lock.acquire(), timeout=1.0)
+
+        ignore_clean_errors = False
+
         try:
-            self.clean_io()
+            try:
+                self.clean_io(ignore_errors=ignore_clean_errors)
+            except PermissionError as error:
+                self.log_external(
+                    level=logging.ERROR,
+                    msg=(
+                        f"Could not clean '{self.input_path}' and/or "
+                        f"'{self.output_path}' directories: {error}"
+                    ),
+                )
+                ignore_clean_errors = True
+                return InferenceResult(return_code=1, outputs=[])
 
             try:
                 self.download_input()
@@ -266,23 +281,23 @@ class InferenceTask(BaseModel):
             return InferenceResult(return_code=return_code, outputs=outputs)
         finally:
             try:
-                self.clean_io()
+                self.clean_io(ignore_errors=ignore_clean_errors)
             finally:
                 lock.release()
 
-    def clean_io(self) -> None:
+    def clean_io(self, *, ignore_errors: bool = False) -> None:
         """Clean all contents of input and output folders"""
-        self._clean_path(self.input_path)
-        self._clean_path(self.output_path)
+        self._clean_path(path=self.input_path, ignore_errors=ignore_errors)
+        self._clean_path(path=self.output_path, ignore_errors=ignore_errors)
 
     @staticmethod
-    def _clean_path(path: Path) -> None:
+    def _clean_path(*, path: Path, ignore_errors: bool) -> None:
         """Removes contents of a directory, keeping the parent"""
         for f in path.glob("**/*"):
             if f.is_file():
                 f.unlink()
             elif f.is_dir():
-                rmtree(f)
+                rmtree(path=f, ignore_errors=ignore_errors)
 
     def download_input(self) -> None:
         """Download all the inputs to the input path"""

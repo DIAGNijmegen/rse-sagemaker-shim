@@ -363,6 +363,6 @@ def test_folder_cleanup(tmp_path):
     for f in ["test", ".test", "test/test", "test/.test", "nested/test/.test"]:
         (tmp_path / f).touch()
 
-    InferenceTask._clean_path(path=tmp_path)
+    InferenceTask._clean_path(path=tmp_path, ignore_errors=False)
 
     assert [*tmp_path.rglob("**/*")] == []
