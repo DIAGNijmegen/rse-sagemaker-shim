@@ -14,6 +14,37 @@ def encode_b64j(*, val: Any) -> str:
     return b64encode(json.dumps(val).encode("utf-8")).decode("utf-8")
 
 
+def push_image(*, client, repo_tag):
+    with TemporaryDirectory() as tempdir:
+        image = client.images.get(name=repo_tag)
+        image_filename = Path(tempdir) / "image.tar"
+
+        f = open(image_filename, "wb")
+
+        for chunk in image.save():
+            f.write(chunk)
+
+        f.close()
+
+        subprocess.run(
+            [CRANE_COMMAND, "push", image_filename, repo_tag],
+            capture_output=True,
+        )
+
+
+def pull_image(*, client, repo_tag):
+    with TemporaryDirectory() as tempdir:
+        image_filename = Path(tempdir) / "image.tar"
+
+        subprocess.run(
+            [CRANE_COMMAND, "pull", repo_tag, image_filename],
+            capture_output=True,
+        )
+
+        with open(image_filename, "rb") as f:
+            client.images.load(data=f)
+
+
 def get_image_config(*, repo_tag: str) -> Any:
     output = subprocess.run(
         [CRANE_COMMAND, "config", repo_tag],

@@ -5,7 +5,12 @@ import docker
 import pytest
 
 from tests import __version__
-from tests.utils import get_image_config, get_new_env_vars, mutate_image
+from tests.utils import (
+    get_image_config,
+    get_new_env_vars,
+    mutate_image,
+    push_image,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +55,7 @@ def test_patch_image(registry):
     repo_tag = f"{repo}/busybox:latest"
 
     client.images.build(fileobj=dockerfile, tag=repo_tag)
-    client.images.push(repo_tag)
+    push_image(client=client, repo_tag=repo_tag)
 
     config = get_image_config(repo_tag=repo_tag)
     env_vars = get_new_env_vars(existing_config=config)

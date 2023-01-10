@@ -15,9 +15,9 @@ classifiers = [
 sagemaker-shim = "sagemaker_shim.cli:cli"
 
 [tool.poetry.dependencies]
-# Only support once version of python at a time
+# Only support one version of python at a time
 python = "^3.10,<3.11"
-fastapi = "*"
+fastapi = "!=0.89.0"
 uvicorn = {extras = ["standard"], version = "*"}
 click = "*"
 boto3 = "*"

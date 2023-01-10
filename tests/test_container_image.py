@@ -13,6 +13,8 @@ from tests.utils import (
     get_image_config,
     get_new_env_vars,
     mutate_image,
+    pull_image,
+    push_image,
 )
 
 # Tests for compatability with
@@ -50,7 +52,7 @@ def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
 
         # Tag and push it to the local registry
         container_image.tag(repo_tag)
-        client.images.push(repo_tag)
+        push_image(client=client, repo_tag=repo_tag)
 
         config = get_image_config(repo_tag=repo_tag)
         env_vars = get_new_env_vars(existing_config=config)
@@ -65,7 +67,7 @@ def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
             env_vars=env_vars,
             version=__version__,
         )
-        client.images.pull(new_tag)
+        pull_image(client=client, repo_tag=new_tag)
 
         container = client.containers.run(
             image=new_tag,
