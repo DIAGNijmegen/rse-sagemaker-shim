@@ -151,29 +151,26 @@ class InferenceTask(BaseModel):
                 b64decode(encoded.encode("utf-8")).decode("utf-8")
             )
 
-    @classmethod
     @property
-    def cmd(cls) -> Any:
+    def cmd(self) -> Any:
         """The original command for the subprocess"""
-        cmd = cls.decode_b64j(
+        cmd = self.decode_b64j(
             encoded=os.environ.get("GRAND_CHALLENGE_COMPONENT_CMD_B64J")
         )
         logger.debug(f"{cmd=}")
         return cmd
 
-    @classmethod
     @property
-    def entrypoint(cls) -> Any:
+    def entrypoint(self) -> Any:
         """The original entrypoint for the subprocess"""
-        entrypoint = cls.decode_b64j(
+        entrypoint = self.decode_b64j(
             encoded=os.environ.get("GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J")
         )
         logger.debug(f"{entrypoint=}")
         return entrypoint
 
-    @classmethod
     @property
-    def input_path(cls) -> Path:
+    def input_path(self) -> Path:
         """Local path where the subprocess is expected to read its input files"""
         input_path = Path(
             os.environ.get("GRAND_CHALLENGE_COMPONENT_INPUT_PATH", "/input")
@@ -181,9 +178,8 @@ class InferenceTask(BaseModel):
         logger.debug(f"{input_path=}")
         return input_path
 
-    @classmethod
     @property
-    def output_path(cls) -> Path:
+    def output_path(self) -> Path:
         """Local path where the subprocess is expected to write its files"""
         output_path = Path(
             os.environ.get("GRAND_CHALLENGE_COMPONENT_OUTPUT_PATH", "/output")
@@ -330,7 +326,7 @@ class InferenceTask(BaseModel):
 
     async def execute(self) -> int:
         """Run the original entrypoint and command in a subprocess"""
-        logger.debug(f"Calling {self.proc_args=}")
+        logger.info(f"Calling {self.proc_args=}")
 
         process = await asyncio.create_subprocess_exec(
             *self.proc_args,
@@ -354,7 +350,7 @@ class InferenceTask(BaseModel):
         finally:
             return_code = await process.wait()
 
-        logger.debug(f"{return_code=}")
+        logger.info(f"{return_code=}")
 
         return return_code
 

@@ -87,7 +87,7 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys):
         f'"internal": false, "task": "{pk}"}}\n'
     ) in captured.out
     assert (
-        '{"log": "return_code=0", "level": "DEBUG", "source": "stdout", '
+        '{"log": "return_code=0", "level": "INFO", "source": "stdout", '
         '"internal": true, "task": null}'
     ) in captured.out
     assert captured.err == (
