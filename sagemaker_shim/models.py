@@ -330,7 +330,7 @@ class InferenceTask(BaseModel):
 
     async def execute(self) -> int:
         """Run the original entrypoint and command in a subprocess"""
-        logger.debug(f"Calling {self.proc_args=}")
+        logger.info(f"Calling {self.proc_args=}")
 
         process = await asyncio.create_subprocess_exec(
             *self.proc_args,
@@ -354,7 +354,7 @@ class InferenceTask(BaseModel):
         finally:
             return_code = await process.wait()
 
-        logger.debug(f"{return_code=}")
+        logger.info(f"{return_code=}")
 
         return return_code
 
