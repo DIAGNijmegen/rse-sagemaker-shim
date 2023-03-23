@@ -151,29 +151,26 @@ class InferenceTask(BaseModel):
                 b64decode(encoded.encode("utf-8")).decode("utf-8")
             )
 
-    @classmethod
     @property
-    def cmd(cls) -> Any:
+    def cmd(self) -> Any:
         """The original command for the subprocess"""
-        cmd = cls.decode_b64j(
+        cmd = self.decode_b64j(
             encoded=os.environ.get("GRAND_CHALLENGE_COMPONENT_CMD_B64J")
         )
         logger.debug(f"{cmd=}")
         return cmd
 
-    @classmethod
     @property
-    def entrypoint(cls) -> Any:
+    def entrypoint(self) -> Any:
         """The original entrypoint for the subprocess"""
-        entrypoint = cls.decode_b64j(
+        entrypoint = self.decode_b64j(
             encoded=os.environ.get("GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J")
         )
         logger.debug(f"{entrypoint=}")
         return entrypoint
 
-    @classmethod
     @property
-    def input_path(cls) -> Path:
+    def input_path(self) -> Path:
         """Local path where the subprocess is expected to read its input files"""
         input_path = Path(
             os.environ.get("GRAND_CHALLENGE_COMPONENT_INPUT_PATH", "/input")
@@ -181,9 +178,8 @@ class InferenceTask(BaseModel):
         logger.debug(f"{input_path=}")
         return input_path
 
-    @classmethod
     @property
-    def output_path(cls) -> Path:
+    def output_path(self) -> Path:
         """Local path where the subprocess is expected to write its files"""
         output_path = Path(
             os.environ.get("GRAND_CHALLENGE_COMPONENT_OUTPUT_PATH", "/output")
@@ -258,8 +254,8 @@ class InferenceTask(BaseModel):
                 self.log_external(
                     level=logging.ERROR,
                     msg=(
-                        f"Could not clean {self.input_path!r} and/or "
-                        f"{self.output_path!r} directories: {error}"
+                        f"Could not clean '{self.input_path}' and/or "
+                        f"'{self.output_path}' directories: {error}"
                     ),
                 )
                 ignore_clean_errors = True
