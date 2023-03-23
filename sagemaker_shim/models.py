@@ -258,8 +258,8 @@ class InferenceTask(BaseModel):
                 self.log_external(
                     level=logging.ERROR,
                     msg=(
-                        f"Could not clean '{self.input_path}' and/or "
-                        f"'{self.output_path}' directories: {error}"
+                        f"Could not clean {self.input_path!r} and/or "
+                        f"{self.output_path!r} directories: {error}"
                     ),
                 )
                 ignore_clean_errors = True
