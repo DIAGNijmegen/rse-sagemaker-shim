@@ -1,4 +1,4 @@
-TEST_VERSION=$(shell python3 -c "from tests import __version__;print(__version__)")
+TEST_VERSION=$(shell python -c "from tests import __version__;print(__version__)")
 RELEASE_VERSION="$(shell poetry version -s)-$(shell uname -s)-$(shell uname -m)"
 DIST_DIR=./dist
 
