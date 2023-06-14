@@ -1,6 +1,6 @@
 FROM python:3.10
 
-RUN mkdir -p /opt/src
+RUN mkdir -p /opt/src/dist
 
 WORKDIR /opt/src
 
@@ -9,11 +9,10 @@ RUN python -m pip install --upgrade pip && \
     apt-get update && \
     apt-get install -y scons patchelf
 
-ENV PATH="/opt/src/.venv/bin:${PATH}"\
-    PYTHONPATH="/opt/src:${PYTHONPATH}"
-
 COPY poetry.lock /opt/src
 COPY pyproject.toml /opt/src
+COPY README.md /opt/src
+COPY sagemaker_shim /opt/src/sagemaker_shim
+COPY tests /opt/src/tests
 
-RUN poetry config virtualenvs.in-project true && \
-    poetry install --no-interaction --no-ansi --no-root
+RUN poetry install --no-interaction --no-ansi
