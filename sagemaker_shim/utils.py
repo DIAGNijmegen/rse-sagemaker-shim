@@ -1,3 +1,4 @@
+import errno
 import logging
 import re
 import zipfile
@@ -65,8 +66,16 @@ def safe_extract(*, src: Path, dest: Path) -> None:
                     f"Extracting {member['src']=} from {src} to {file_dest}"
                 )
 
-                with zf.open(member["src"], "r") as fs, open(
-                    file_dest, "wb"
-                ) as fd:
-                    while chunk := fs.read(8192):
-                        fd.write(chunk)
+                try:
+                    with zf.open(member["src"], "r") as fs, open(
+                        file_dest, "wb"
+                    ) as fd:
+                        while chunk := fs.read(8192):
+                            fd.write(chunk)
+                except OSError as error:
+                    if error.errno == errno.ENOSPC:
+                        raise ZipExtractionError(
+                            "Contents of zip file too large"
+                        ) from error
+                    else:
+                        raise error
