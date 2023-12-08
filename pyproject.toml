@@ -30,7 +30,7 @@ pytest-randomly = "*"
 pytest-xdist = "*"
 pytest-cov = "*"
 staticx = [
-  { version = '*', platform = 'linux' },
+  { version = "*", platform = "linux" },
 ]
 pyinstaller = "*"
 boto3-stubs = {extras = ["s3"], version = "*"}

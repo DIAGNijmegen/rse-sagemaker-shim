@@ -1,3 +1,4 @@
+import sys
 from contextlib import contextmanager
 from importlib.metadata import version
 from time import sleep
@@ -103,6 +104,9 @@ def container():
 
 
 @pytest.mark.container
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="does not run outside linux"
+)
 def test_container_responds_to_ping():
     response = httpx.get("http://localhost:8080/ping")
 
@@ -113,6 +117,9 @@ def test_container_responds_to_ping():
 
 
 @pytest.mark.container
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="does not run outside linux"
+)
 def test_container_responds_to_execution_parameters():
     response = httpx.get("http://localhost:8080/execution-parameters")
 
@@ -124,6 +131,9 @@ def test_container_responds_to_execution_parameters():
 
 
 @pytest.mark.container
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="does not run outside linux"
+)
 def test_invocations_endpoint():
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
@@ -149,6 +159,9 @@ def test_invocations_endpoint():
 
 
 @pytest.mark.container
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="does not run outside linux"
+)
 def test_alpine_image():
     # https://github.com/JonathonReinhart/staticx/issues/143
     host_port = 8081

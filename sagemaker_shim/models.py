@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from zipfile import BadZipFile
 
 import boto3
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from sagemaker_shim.exceptions import ZipExtractionError
 from sagemaker_shim.logging import STDOUT_LEVEL
@@ -45,16 +45,16 @@ def validate_bucket_name(v: str) -> str:
 class InferenceIO(BaseModel):
     """A single input or output file for an inference job"""
 
+    model_config = ConfigDict(frozen=True)
+
     relative_path: Path
     bucket_name: str
     bucket_key: str
     decompress: bool = False
 
-    class Config:
-        frozen = True
-
-    @validator("bucket_name")
-    def validate_bucket_name(cls, v: str) -> str:  # noqa:B902
+    @field_validator("bucket_name")
+    @classmethod
+    def validate_bucket_name(cls, v: str) -> str:
         return validate_bucket_name(v)
 
     def local_file(self, path: Path) -> Path:
@@ -110,25 +110,24 @@ class InferenceIO(BaseModel):
 
 
 class InferenceResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     return_code: int
     outputs: list[InferenceIO]
     sagemaker_shim_version: str = version("sagemaker-shim")
 
-    class Config:
-        frozen = True
-
 
 class InferenceTask(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     pk: str
     inputs: list[InferenceIO]
     output_bucket_name: str
     output_prefix: str
 
-    class Config:
-        frozen = True
-
-    @validator("output_prefix")
-    def validate_prefix(cls, v: str) -> str:  # noqa:B902
+    @field_validator("output_prefix")
+    @classmethod
+    def validate_prefix(cls, v: str) -> str:
         if not v:
             raise ValueError("Prefix cannot be blank")
 
@@ -137,8 +136,9 @@ class InferenceTask(BaseModel):
 
         return v
 
-    @validator("output_bucket_name")
-    def validate_bucket_name(cls, v: str) -> str:  # noqa:B902
+    @field_validator("output_bucket_name")
+    @classmethod
+    def validate_bucket_name(cls, v: str) -> str:
         return validate_bucket_name(v)
 
     @staticmethod
