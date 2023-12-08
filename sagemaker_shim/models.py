@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import json
 import logging
 import os
@@ -86,6 +87,13 @@ class InferenceIO(BaseModel):
                     raise ZipExtractionError(
                         "Input zip file could not be extracted"
                     ) from error
+                except OSError as error:
+                    if error.errno == errno.ENOSPC:
+                        raise ZipExtractionError(
+                            "Contents of zip file too large"
+                        ) from error
+                    else:
+                        raise error
         else:
             with dest_file.open("wb") as f:
                 s3_client.download_fileobj(
