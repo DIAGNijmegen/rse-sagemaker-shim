@@ -117,7 +117,7 @@ def container():
     sys.platform != "linux", reason="does not run outside linux"
 )
 def test_container_responds_to_ping():
-    response = httpx.get("http://localhost:8080/ping")
+    response = httpx.get("http://localhost:8080/ping", timeout=30)
 
     # SageMaker waits for an HTTP 200 status code and an empty body
     # for a successful ping request before sending an invocations request.
@@ -130,7 +130,9 @@ def test_container_responds_to_ping():
     sys.platform != "linux", reason="does not run outside linux"
 )
 def test_container_responds_to_execution_parameters():
-    response = httpx.get("http://localhost:8080/execution-parameters")
+    response = httpx.get(
+        "http://localhost:8080/execution-parameters", timeout=30
+    )
 
     assert response.json() == {
         "MaxConcurrentTransforms": 1,
@@ -154,7 +156,9 @@ def test_invocations_endpoint(minio):
         "output_bucket_name": minio.output_bucket_name,
         "output_prefix": f"test/{pk}",
     }
-    response = httpx.post("http://localhost:8080/invocations", json=data)
+    response = httpx.post(
+        "http://localhost:8080/invocations", json=data, timeout=30
+    )
 
     # To obtain inferences, Amazon SageMaker sends a POST request to the
     # inference container. The POST request body contains data from
@@ -188,7 +192,7 @@ def test_alpine_image(minio):
             "output_prefix": f"test/{pk}",
         }
         response = httpx.post(
-            f"http://localhost:{host_port}/invocations", json=data
+            f"http://localhost:{host_port}/invocations", json=data, timeout=30
         )
 
         response = response.json()

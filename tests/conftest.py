@@ -55,7 +55,7 @@ def minio_container():
     )
 
     # Wait for startup
-    sleep(5)
+    sleep(1)
 
     mpatch = pytest.MonkeyPatch()
 
