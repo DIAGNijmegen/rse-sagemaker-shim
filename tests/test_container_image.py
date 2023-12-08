@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from tests import __version__
+from tests.conftest import minio_container
 from tests.utils import (
     encode_b64j,
     get_image_config,
@@ -70,21 +71,23 @@ def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
         )
         pull_image(client=client, repo_tag=new_tag)
 
-        container = client.containers.run(
-            image=new_tag,
-            # For batch transforms, SageMaker runs the container as
-            # docker run image serve
-            command="serve",
-            # Containers must implement a web server that responds
-            # to invocations and ping requests on port 8080.
-            ports={8080: host_port},
-            auto_remove=True,
-            detach=True,
-            # You can't use the init initializer as your entry point
-            # in SageMaker containers because it gets confused by the
-            # train and serve arguments
-            init=False,
-        )
+        with minio_container() as minio:
+            container = client.containers.run(
+                image=new_tag,
+                # For batch transforms, SageMaker runs the container as
+                # docker run image serve
+                command="serve",
+                # Containers must implement a web server that responds
+                # to invocations and ping requests on port 8080.
+                ports={8080: host_port},
+                auto_remove=True,
+                detach=True,
+                # You can't use the init initializer as your entry point
+                # in SageMaker containers because it gets confused by the
+                # train and serve arguments
+                init=False,
+                environment=minio.env,
+            )
 
         # Wait for startup
         sleep(3)
@@ -134,15 +137,16 @@ def test_container_responds_to_execution_parameters():
 @pytest.mark.skipif(
     sys.platform != "linux", reason="does not run outside linux"
 )
-def test_invocations_endpoint():
+def test_invocations_endpoint(minio):
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
     # /invocations endpoint.
+    pk = str(uuid4())
     data = {
         "pk": str(uuid4()),
         "inputs": [],
-        "output_bucket_name": "test",
-        "output_prefix": "test",
+        "output_bucket_name": minio.output_bucket_name,
+        "output_prefix": f"test/{pk}",
     }
     response = httpx.post("http://localhost:8080/invocations", json=data)
 
