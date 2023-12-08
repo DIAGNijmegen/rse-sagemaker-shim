@@ -1,5 +1,6 @@
 import asyncio
 import errno
+import io
 import json
 import logging
 import os
@@ -18,8 +19,8 @@ import boto3
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from sagemaker_shim.exceptions import ZipExtractionError
+from sagemaker_shim.extract import safe_extract
 from sagemaker_shim.logging import STDOUT_LEVEL
-from sagemaker_shim.utils import safe_extract
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client  # pragma: no cover
@@ -120,6 +121,7 @@ class InferenceIO(BaseModel):
 class InferenceResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    pk: str
     return_code: int
     outputs: list[InferenceIO]
     sagemaker_shim_version: str = version("sagemaker-shim")
@@ -253,6 +255,22 @@ class InferenceTask(BaseModel):
 
         await asyncio.wait_for(lock.acquire(), timeout=1.0)
 
+        try:
+            inference_result = await self._invoke()
+
+            logger.info(
+                f"Inference for {self.pk=} complete, {inference_result=}"
+            )
+
+            self.upload_inference_result(inference_result=inference_result)
+
+            return inference_result
+        finally:
+            lock.release()
+
+    async def _invoke(self) -> InferenceResult:
+        logger.info(f"Invoking {self.pk=}")
+
         ignore_clean_errors = False
 
         try:
@@ -267,13 +285,13 @@ class InferenceTask(BaseModel):
                     ),
                 )
                 ignore_clean_errors = True
-                return InferenceResult(return_code=1, outputs=[])
+                return InferenceResult(pk=self.pk, return_code=1, outputs=[])
 
             try:
                 self.download_input()
             except ZipExtractionError as error:
                 self.log_external(level=logging.ERROR, msg=str(error))
-                return InferenceResult(return_code=1, outputs=[])
+                return InferenceResult(pk=self.pk, return_code=1, outputs=[])
 
             return_code = await self.execute()
 
@@ -282,12 +300,11 @@ class InferenceTask(BaseModel):
             else:
                 outputs = set()
 
-            return InferenceResult(return_code=return_code, outputs=outputs)
+            return InferenceResult(
+                pk=self.pk, return_code=return_code, outputs=outputs
+            )
         finally:
-            try:
-                self.clean_io(ignore_errors=ignore_clean_errors)
-            finally:
-                lock.release()
+            self.clean_io(ignore_errors=ignore_clean_errors)
 
     def clean_io(self, *, ignore_errors: bool = False) -> None:
         """Clean all contents of input and output folders"""
@@ -331,6 +348,27 @@ class InferenceTask(BaseModel):
                 outputs.add(output)
 
         return outputs
+
+    def upload_inference_result(
+        self, *, inference_result: InferenceResult
+    ) -> None:
+        fileobj = io.BytesIO(
+            inference_result.model_dump_json().encode("utf-8")
+        )
+        bucket_key = (
+            f"{self.output_prefix}.sagemaker_shim/inference_result.json"
+        )
+
+        logger.info(
+            f"Uploading Inference Result to "
+            f"{self.output_bucket_name=} with {bucket_key=}"
+        )
+
+        self._s3_client.upload_fileobj(
+            Fileobj=fileobj,
+            Bucket=self.output_bucket_name,
+            Key=bucket_key,
+        )
 
     async def execute(self) -> int:
         """Run the original entrypoint and command in a subprocess"""

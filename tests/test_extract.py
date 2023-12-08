@@ -4,7 +4,7 @@ from zipfile import ZipFile
 import pytest
 
 from sagemaker_shim.exceptions import ZipExtractionError
-from sagemaker_shim.utils import safe_extract
+from sagemaker_shim.extract import safe_extract
 
 
 def test_extract_with_dodgy_file(tmp_path):

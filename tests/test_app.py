@@ -29,7 +29,7 @@ def test_container_responds_to_execution_parameters(client):
     }
 
 
-def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys):
+def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
     # /invocations endpoint.
@@ -38,8 +38,8 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys):
     data = {
         "pk": pk,
         "inputs": [],
-        "output_bucket_name": "test",
-        "output_prefix": "test",
+        "output_bucket_name": minio.output_bucket_name,
+        "output_prefix": f"test/{pk}",
     }
 
     input_path = tmp_path / "input"
@@ -108,14 +108,19 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys):
 
 
 def test_invoke_with_unclearable_input(
-    client, tmp_path, monkeypatch, capsys, mocker
+    client,
+    tmp_path,
+    monkeypatch,
+    capsys,
+    mocker,
+    minio,
 ):
     pk = str(uuid4())
     data = {
         "pk": pk,
         "inputs": [],
-        "output_bucket_name": "test",
-        "output_prefix": "test",
+        "output_bucket_name": minio.output_bucket_name,
+        "output_prefix": f"test/{pk}",
     }
 
     input_path = tmp_path / "input"

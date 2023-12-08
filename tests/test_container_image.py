@@ -1,3 +1,4 @@
+import copy
 import sys
 from contextlib import contextmanager
 from importlib.metadata import version
@@ -9,6 +10,7 @@ import httpx
 import pytest
 
 from tests import __version__
+from tests.conftest import minio_container
 from tests.utils import (
     encode_b64j,
     get_image_config,
@@ -70,29 +72,36 @@ def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
         )
         pull_image(client=client, repo_tag=new_tag)
 
-        container = client.containers.run(
-            image=new_tag,
-            # For batch transforms, SageMaker runs the container as
-            # docker run image serve
-            command="serve",
-            # Containers must implement a web server that responds
-            # to invocations and ping requests on port 8080.
-            ports={8080: host_port},
-            auto_remove=True,
-            detach=True,
-            # You can't use the init initializer as your entry point
-            # in SageMaker containers because it gets confused by the
-            # train and serve arguments
-            init=False,
-        )
+        with minio_container() as minio:
+            container_env = copy.deepcopy(minio.env)
 
-        # Wait for startup
-        sleep(3)
+            container_env["AWS_S3_ENDPOINT_URL"] = "http://minio:9000"
 
-        try:
-            yield container
-        finally:
-            container.stop(timeout=0)
+            container = client.containers.run(
+                image=new_tag,
+                # For batch transforms, SageMaker runs the container as
+                # docker run image serve
+                command="serve",
+                # Containers must implement a web server that responds
+                # to invocations and ping requests on port 8080.
+                ports={8080: host_port},
+                auto_remove=True,
+                detach=True,
+                # You can't use the init initializer as your entry point
+                # in SageMaker containers because it gets confused by the
+                # train and serve arguments
+                init=False,
+                environment=container_env,
+                links={minio.container.name: "minio"},
+            )
+
+            # Wait for startup
+            sleep(3)
+
+            try:
+                yield container
+            finally:
+                container.stop(timeout=0)
     finally:
         registry.stop(timeout=0)
 
@@ -108,7 +117,7 @@ def container():
     sys.platform != "linux", reason="does not run outside linux"
 )
 def test_container_responds_to_ping():
-    response = httpx.get("http://localhost:8080/ping")
+    response = httpx.get("http://localhost:8080/ping", timeout=30)
 
     # SageMaker waits for an HTTP 200 status code and an empty body
     # for a successful ping request before sending an invocations request.
@@ -121,7 +130,9 @@ def test_container_responds_to_ping():
     sys.platform != "linux", reason="does not run outside linux"
 )
 def test_container_responds_to_execution_parameters():
-    response = httpx.get("http://localhost:8080/execution-parameters")
+    response = httpx.get(
+        "http://localhost:8080/execution-parameters", timeout=30
+    )
 
     assert response.json() == {
         "MaxConcurrentTransforms": 1,
@@ -134,17 +145,20 @@ def test_container_responds_to_execution_parameters():
 @pytest.mark.skipif(
     sys.platform != "linux", reason="does not run outside linux"
 )
-def test_invocations_endpoint():
+def test_invocations_endpoint(minio):
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
     # /invocations endpoint.
+    pk = str(uuid4())
     data = {
         "pk": str(uuid4()),
         "inputs": [],
-        "output_bucket_name": "test",
-        "output_prefix": "test",
+        "output_bucket_name": minio.output_bucket_name,
+        "output_prefix": f"test/{pk}",
     }
-    response = httpx.post("http://localhost:8080/invocations", json=data)
+    response = httpx.post(
+        "http://localhost:8080/invocations", json=data, timeout=30
+    )
 
     # To obtain inferences, Amazon SageMaker sends a POST request to the
     # inference container. The POST request body contains data from
@@ -162,7 +176,7 @@ def test_invocations_endpoint():
 @pytest.mark.skipif(
     sys.platform != "linux", reason="does not run outside linux"
 )
-def test_alpine_image():
+def test_alpine_image(minio):
     # https://github.com/JonathonReinhart/staticx/issues/143
     host_port = 8081
     with _container(
@@ -170,14 +184,15 @@ def test_alpine_image():
         host_port=host_port,
         cmd=["python", "-c", "print('hello_world')"],
     ):
+        pk = str(uuid4())
         data = {
-            "pk": str(uuid4()),
+            "pk": pk,
             "inputs": [],
-            "output_bucket_name": "test",
-            "output_prefix": "test",
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": f"test/{pk}",
         }
         response = httpx.post(
-            f"http://localhost:{host_port}/invocations", json=data
+            f"http://localhost:{host_port}/invocations", json=data, timeout=30
         )
 
         response = response.json()
