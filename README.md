@@ -13,7 +13,7 @@ The application contains:
 - A `fastapi` web server that implements the SageMaker endpoints
 - and `pydantic` models that interface between S3, and run the original inference jobs.
 
-The application is compiled on Python 3.10 using `pyinstaller`, and then distributed as a statically linked binary using `staticx`.
+The application is compiled on Python 3.11 using `pyinstaller`, and then distributed as a statically linked binary using `staticx`.
 It is able to adapt any container, including ones based on `scratch` or `alpine` images.
 
 ## Usage

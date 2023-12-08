@@ -1,4 +1,5 @@
 import io
+import sys
 from time import sleep
 
 import docker
@@ -43,6 +44,9 @@ def registry():
 
 
 @pytest.mark.registry
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="does not run outside linux"
+)
 def test_patch_image(registry):
     repo = registry[0]
     client = registry[1]
