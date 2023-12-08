@@ -101,11 +101,11 @@ def test_single_file_nested(tmp_path):
 
     assert content == [str(pk)]
 
+
 def test_single_directory(tmp_path):
     file = tmp_path / "test.zip"
     dest = tmp_path / "dest"
     dest.mkdir()
-    pk = uuid4()
 
     with ZipFile(file=file, mode="w") as zip:
         zip.mkdir("just-a-directory")
