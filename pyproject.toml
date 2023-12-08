@@ -22,7 +22,7 @@ uvicorn = {extras = ["standard"], version = "*"}
 click = "*"
 boto3 = "*"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "*"
 docker = "*"
 httpx = "*"
@@ -35,6 +35,7 @@ staticx = [
 pyinstaller = "*"
 boto3-stubs = {extras = ["s3"], version = "*"}
 pytest-mock = "*"
+pytest-asyncio = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

@@ -1,83 +1,25 @@
 import io
+import json
 import logging.config
 import os
-from contextlib import contextmanager
 from pathlib import Path
-from time import sleep
-from typing import NamedTuple
 from uuid import uuid4
 from zipfile import ZipFile
 
-import boto3
-import docker
 import pytest
-from docker.models.containers import Container
 
 from sagemaker_shim.logging import LOGGING_CONFIG
-from sagemaker_shim.models import InferenceIO, InferenceTask
-
-
-class Minio(NamedTuple):
-    input_bucket_name: str
-    output_bucket_name: str
-    container: Container
-    port: int
-
-
-@contextmanager
-def minio_container():
-    input_bucket_name = "test-inputs"
-    output_bucket_name = "test-outputs"
-
-    client = docker.from_env()
-    minio = client.containers.run(
-        image="minio/minio:latest",
-        entrypoint="/bin/sh",
-        command=[
-            "-c",
-            f"mkdir -p /data/{input_bucket_name} /data/{output_bucket_name} "
-            "&& minio --compat server /data",
-        ],
-        ports={9000: None},
-        auto_remove=True,
-        detach=True,
-        init=True,
-    )
-
-    # Wait for startup
-    sleep(1)
-
-    mpatch = pytest.MonkeyPatch()
-
-    try:
-        minio.reload()  # required to get ports
-        port = minio.ports["9000/tcp"][0]["HostPort"]
-
-        mpatch.setenv("AWS_ACCESS_KEY_ID", "minioadmin")
-        mpatch.setenv("AWS_SECRET_ACCESS_KEY", "minioadmin")
-        mpatch.setenv("AWS_S3_ENDPOINT_URL", f"http://localhost:{port}")
-
-        yield Minio(
-            input_bucket_name=input_bucket_name,
-            output_bucket_name=output_bucket_name,
-            container=minio,
-            port=port,
-        )
-    finally:
-        mpatch.undo()
-        minio.stop(timeout=0)
-
-
-@pytest.fixture(scope="session")
-def minio():
-    with minio_container() as m:
-        yield m
+from sagemaker_shim.models import (
+    InferenceIO,
+    InferenceResult,
+    InferenceTask,
+    get_s3_client,
+)
+from tests.utils import encode_b64j
 
 
 def test_input_download(minio, tmp_path, monkeypatch):
-    s3_client = boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
+    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -139,9 +81,7 @@ def test_input_download(minio, tmp_path, monkeypatch):
 
 
 def test_input_decompress(minio, tmp_path, monkeypatch):
-    s3_client = boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
+    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -190,9 +130,7 @@ def test_input_decompress(minio, tmp_path, monkeypatch):
 
 
 def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
-    s3_client = boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
+    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {
@@ -205,8 +143,8 @@ def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
                 "decompress": True,
             }
         ],
-        "output_bucket_name": "test",
-        "output_prefix": "test",
+        "output_bucket_name": minio.output_bucket_name,
+        "output_prefix": prefix,
     }
 
     input_path = tmp_path / "input"
@@ -245,9 +183,7 @@ def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
 
 
 def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
-    s3_client = boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
+    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {
@@ -260,8 +196,8 @@ def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
                 "decompress": True,
             }
         ],
-        "output_bucket_name": "test",
-        "output_prefix": "test",
+        "output_bucket_name": minio.output_bucket_name,
+        "output_prefix": prefix,
     }
 
     input_path = tmp_path / "input"
@@ -298,9 +234,7 @@ def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
 
 
 def test_output_upload(minio, tmp_path, monkeypatch):
-    s3_client = boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
+    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -354,6 +288,50 @@ def test_output_upload(minio, tmp_path, monkeypatch):
 
     assert root_f.read() == root_data
     assert sub_f.read() == sub_data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cmd,expected_return_code",
+    (
+        (["echo", "hello"], 0),
+        (["bash", "-c", "exit 1"], 1),
+    ),
+)
+async def test_inference_result_upload(
+    minio, tmp_path, monkeypatch, cmd, expected_return_code
+):
+    s3_client = get_s3_client()
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=str(prefix),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+
+    direct_invocation = await task.invoke()
+
+    assert direct_invocation.return_code == expected_return_code
+    assert direct_invocation.pk == pk
+
+    serialised_invocation = io.BytesIO()
+    s3_client.download_fileobj(
+        Fileobj=serialised_invocation,
+        Bucket=minio.output_bucket_name,
+        Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
+    )
+    serialised_invocation.seek(0)
+
+    assert direct_invocation == InferenceResult(
+        **json.loads(serialised_invocation.read().decode("utf-8"))
+    )
 
 
 def test_folder_cleanup(tmp_path):

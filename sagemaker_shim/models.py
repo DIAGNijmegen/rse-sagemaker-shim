@@ -1,12 +1,12 @@
 import asyncio
 import errno
+import io
 import json
 import logging
 import os
 import re
 import subprocess
 from base64 import b64decode
-from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
 from shutil import rmtree
@@ -34,6 +34,12 @@ BUCKET_NAME_REGEX = re.compile(r"^[a-zA-Z0-9.\-_]{1,255}$")
 BUCKET_ARN_REGEX = re.compile(
     r"^arn:(aws).*:(s3|s3-object-lambda):[a-z\-0-9]*:[0-9]{12}:accesspoint[/:][a-zA-Z0-9\-.]{1,63}$|^arn:(aws).*:s3-outposts:[a-z\-0-9]+:[0-9]{12}:outpost[/:][a-zA-Z0-9\-]{1,63}[/:]accesspoint[/:][a-zA-Z0-9\-]{1,63}$"
 )
+
+
+def get_s3_client() -> S3Client:
+    return boto3.client(
+        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+    )
 
 
 def validate_bucket_name(v: str) -> str:
@@ -120,6 +126,7 @@ class InferenceIO(BaseModel):
 class InferenceResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    pk: str
     return_code: int
     outputs: list[InferenceIO]
     sagemaker_shim_version: str = version("sagemaker-shim")
@@ -195,12 +202,6 @@ class InferenceTask(BaseModel):
         logger.debug(f"{output_path=}")
         return output_path
 
-    @cached_property
-    def _s3_client(self) -> S3Client:
-        return boto3.client(
-            "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-        )
-
     @property
     def proc_args(self) -> list[str]:
         """
@@ -253,6 +254,22 @@ class InferenceTask(BaseModel):
 
         await asyncio.wait_for(lock.acquire(), timeout=1.0)
 
+        try:
+            inference_result = await self._invoke()
+
+            logger.info(
+                f"Inference for {self.pk=} complete, {inference_result=}"
+            )
+
+            self.upload_inference_result(inference_result=inference_result)
+
+            return inference_result
+        finally:
+            lock.release()
+
+    async def _invoke(self) -> InferenceResult:
+        logger.info(f"Invoking {self.pk=}")
+
         ignore_clean_errors = False
 
         try:
@@ -267,13 +284,13 @@ class InferenceTask(BaseModel):
                     ),
                 )
                 ignore_clean_errors = True
-                return InferenceResult(return_code=1, outputs=[])
+                return InferenceResult(pk=self.pk, return_code=1, outputs=[])
 
             try:
                 self.download_input()
             except ZipExtractionError as error:
                 self.log_external(level=logging.ERROR, msg=str(error))
-                return InferenceResult(return_code=1, outputs=[])
+                return InferenceResult(pk=self.pk, return_code=1, outputs=[])
 
             return_code = await self.execute()
 
@@ -282,12 +299,11 @@ class InferenceTask(BaseModel):
             else:
                 outputs = set()
 
-            return InferenceResult(return_code=return_code, outputs=outputs)
+            return InferenceResult(
+                pk=self.pk, return_code=return_code, outputs=outputs
+            )
         finally:
-            try:
-                self.clean_io(ignore_errors=ignore_clean_errors)
-            finally:
-                lock.release()
+            self.clean_io(ignore_errors=ignore_clean_errors)
 
     def clean_io(self, *, ignore_errors: bool = False) -> None:
         """Clean all contents of input and output folders"""
@@ -305,15 +321,19 @@ class InferenceTask(BaseModel):
 
     def download_input(self) -> None:
         """Download all the inputs to the input path"""
+        s3_client = get_s3_client()
+
         for input_file in self.inputs:
             input_file.download(
-                input_path=self.input_path, s3_client=self._s3_client
+                input_path=self.input_path, s3_client=s3_client
             )
 
     def upload_output(self) -> set[InferenceIO]:
         """Upload all the outputs from the output path to s3"""
         output_path = self.output_path
         outputs: set[InferenceIO] = set()
+
+        s3_client = get_s3_client()
 
         for f in output_path.rglob("**/*"):
             if not f.is_file() and not f.is_symlink():
@@ -326,11 +346,34 @@ class InferenceTask(BaseModel):
                     bucket_name=self.output_bucket_name,
                 )
                 output.upload(
-                    output_path=self.output_path, s3_client=self._s3_client
+                    output_path=self.output_path, s3_client=s3_client
                 )
                 outputs.add(output)
 
         return outputs
+
+    def upload_inference_result(
+        self, *, inference_result: InferenceResult
+    ) -> None:
+        s3_client = get_s3_client()
+
+        fileobj = io.BytesIO(
+            inference_result.model_dump_json().encode("utf-8")
+        )
+        bucket_key = (
+            f"{self.output_prefix}.sagemaker_shim/inference_result.json"
+        )
+
+        logger.info(
+            f"Uploading Inference Result to "
+            f"{self.output_bucket_name=} with {bucket_key=}"
+        )
+
+        s3_client.upload_fileobj(
+            Fileobj=fileobj,
+            Bucket=self.output_bucket_name,
+            Key=bucket_key,
+        )
 
     async def execute(self) -> int:
         """Run the original entrypoint and command in a subprocess"""
