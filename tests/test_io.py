@@ -6,11 +6,15 @@ from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
 
-import boto3
 import pytest
 
 from sagemaker_shim.logging import LOGGING_CONFIG
-from sagemaker_shim.models import InferenceIO, InferenceResult, InferenceTask
+from sagemaker_shim.models import (
+    InferenceIO,
+    InferenceResult,
+    InferenceTask,
+    get_s3_client,
+)
 from tests.utils import encode_b64j
 
 
@@ -124,9 +128,7 @@ def test_input_decompress(minio, tmp_path, monkeypatch):
 
 
 def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
-    s3_client = boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
+    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {
@@ -179,9 +181,7 @@ def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
 
 
 def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
-    s3_client = boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
+    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {
@@ -232,9 +232,7 @@ def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
 
 
 def test_output_upload(minio, tmp_path, monkeypatch):
-    s3_client = boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
+    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(

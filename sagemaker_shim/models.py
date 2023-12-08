@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from zipfile import BadZipFile
 
 import boto3
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
 from sagemaker_shim.exceptions import ZipExtractionError
 from sagemaker_shim.extract import safe_extract
@@ -35,6 +35,32 @@ BUCKET_NAME_REGEX = re.compile(r"^[a-zA-Z0-9.\-_]{1,255}$")
 BUCKET_ARN_REGEX = re.compile(
     r"^arn:(aws).*:(s3|s3-object-lambda):[a-z\-0-9]*:[0-9]{12}:accesspoint[/:][a-zA-Z0-9\-.]{1,63}$|^arn:(aws).*:s3-outposts:[a-z\-0-9]+:[0-9]{12}:outpost[/:][a-zA-Z0-9\-]{1,63}[/:]accesspoint[/:][a-zA-Z0-9\-]{1,63}$"
 )
+
+
+def get_s3_client() -> S3Client:
+    return boto3.client(
+        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+    )
+
+
+def get_s3_file_content(*, s3_uri: str) -> bytes:
+    pattern = r"^(https|s3)://(?P<bucket>[^/]+)/?(?P<key>.*)$"
+    match = re.fullmatch(pattern, s3_uri)
+
+    if not match:
+        raise ValueError(f"Not a valid S3 uri, must match pattern {pattern}")
+
+    s3_client = get_s3_client()
+
+    content = io.BytesIO()
+    s3_client.download_fileobj(
+        Fileobj=content,
+        Bucket=match.group("bucket"),
+        Key=match.group("key"),
+    )
+    content.seek(0)
+
+    return content.read()
 
 
 def validate_bucket_name(v: str) -> str:
@@ -199,9 +225,7 @@ class InferenceTask(BaseModel):
 
     @cached_property
     def _s3_client(self) -> S3Client:
-        return boto3.client(
-            "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-        )
+        return get_s3_client()
 
     @property
     def proc_args(self) -> list[str]:
@@ -430,3 +454,7 @@ class InferenceTask(BaseModel):
         logger.log(
             level=level, msg=msg, extra={"internal": False, "task": self}
         )
+
+
+class InferenceTaskList(RootModel[list[InferenceTask]]):
+    pass
