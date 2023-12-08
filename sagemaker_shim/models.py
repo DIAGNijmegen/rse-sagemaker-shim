@@ -18,8 +18,8 @@ import boto3
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from sagemaker_shim.exceptions import ZipExtractionError
+from sagemaker_shim.extract import safe_extract
 from sagemaker_shim.logging import STDOUT_LEVEL
-from sagemaker_shim.utils import safe_extract
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client  # pragma: no cover
