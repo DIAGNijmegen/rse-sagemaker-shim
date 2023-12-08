@@ -95,13 +95,13 @@ def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
                 links={minio.container.name: "minio"},
             )
 
-        # Wait for startup
-        sleep(3)
+            # Wait for startup
+            sleep(3)
 
-        try:
-            yield container
-        finally:
-            container.stop(timeout=0)
+            try:
+                yield container
+            finally:
+                container.stop(timeout=0)
     finally:
         registry.stop(timeout=0)
 
