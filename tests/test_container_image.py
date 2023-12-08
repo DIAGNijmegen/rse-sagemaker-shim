@@ -153,7 +153,7 @@ def test_alpine_image():
     # https://github.com/JonathonReinhart/staticx/issues/143
     host_port = 8081
     with _container(
-        base_image="python:3.10-alpine",
+        base_image="python:3.11-alpine",
         host_port=host_port,
         cmd=["python", "-c", "print('hello_world')"],
     ):
