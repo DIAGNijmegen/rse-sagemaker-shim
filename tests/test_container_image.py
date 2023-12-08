@@ -1,3 +1,4 @@
+import copy
 import sys
 from contextlib import contextmanager
 from importlib.metadata import version
@@ -72,6 +73,10 @@ def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
         pull_image(client=client, repo_tag=new_tag)
 
         with minio_container() as minio:
+            container_env = copy.deepcopy(minio.env)
+
+            container_env["AWS_S3_ENDPOINT_URL"] = "http://minio:9000"
+
             container = client.containers.run(
                 image=new_tag,
                 # For batch transforms, SageMaker runs the container as
@@ -86,7 +91,8 @@ def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
                 # in SageMaker containers because it gets confused by the
                 # train and serve arguments
                 init=False,
-                environment=minio.env,
+                environment=container_env,
+                links={minio.container.name: "minio"},
             )
 
         # Wait for startup
@@ -166,7 +172,7 @@ def test_invocations_endpoint(minio):
 @pytest.mark.skipif(
     sys.platform != "linux", reason="does not run outside linux"
 )
-def test_alpine_image():
+def test_alpine_image(minio):
     # https://github.com/JonathonReinhart/staticx/issues/143
     host_port = 8081
     with _container(
@@ -174,11 +180,12 @@ def test_alpine_image():
         host_port=host_port,
         cmd=["python", "-c", "print('hello_world')"],
     ):
+        pk = str(uuid4())
         data = {
-            "pk": str(uuid4()),
+            "pk": pk,
             "inputs": [],
-            "output_bucket_name": "test",
-            "output_prefix": "test",
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": f"test/{pk}",
         }
         response = httpx.post(
             f"http://localhost:{host_port}/invocations", json=data

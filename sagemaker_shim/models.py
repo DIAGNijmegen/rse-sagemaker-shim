@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 from base64 import b64decode
+from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
 from shutil import rmtree
@@ -34,12 +35,6 @@ BUCKET_NAME_REGEX = re.compile(r"^[a-zA-Z0-9.\-_]{1,255}$")
 BUCKET_ARN_REGEX = re.compile(
     r"^arn:(aws).*:(s3|s3-object-lambda):[a-z\-0-9]*:[0-9]{12}:accesspoint[/:][a-zA-Z0-9\-.]{1,63}$|^arn:(aws).*:s3-outposts:[a-z\-0-9]+:[0-9]{12}:outpost[/:][a-zA-Z0-9\-]{1,63}[/:]accesspoint[/:][a-zA-Z0-9\-]{1,63}$"
 )
-
-
-def get_s3_client() -> S3Client:
-    return boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
 
 
 def validate_bucket_name(v: str) -> str:
@@ -202,6 +197,12 @@ class InferenceTask(BaseModel):
         logger.debug(f"{output_path=}")
         return output_path
 
+    @cached_property
+    def _s3_client(self) -> S3Client:
+        return boto3.client(
+            "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+        )
+
     @property
     def proc_args(self) -> list[str]:
         """
@@ -321,19 +322,15 @@ class InferenceTask(BaseModel):
 
     def download_input(self) -> None:
         """Download all the inputs to the input path"""
-        s3_client = get_s3_client()
-
         for input_file in self.inputs:
             input_file.download(
-                input_path=self.input_path, s3_client=s3_client
+                input_path=self.input_path, s3_client=self._s3_client
             )
 
     def upload_output(self) -> set[InferenceIO]:
         """Upload all the outputs from the output path to s3"""
         output_path = self.output_path
         outputs: set[InferenceIO] = set()
-
-        s3_client = get_s3_client()
 
         for f in output_path.rglob("**/*"):
             if not f.is_file() and not f.is_symlink():
@@ -346,7 +343,7 @@ class InferenceTask(BaseModel):
                     bucket_name=self.output_bucket_name,
                 )
                 output.upload(
-                    output_path=self.output_path, s3_client=s3_client
+                    output_path=self.output_path, s3_client=self._s3_client
                 )
                 outputs.add(output)
 
@@ -355,8 +352,6 @@ class InferenceTask(BaseModel):
     def upload_inference_result(
         self, *, inference_result: InferenceResult
     ) -> None:
-        s3_client = get_s3_client()
-
         fileobj = io.BytesIO(
             inference_result.model_dump_json().encode("utf-8")
         )
@@ -369,7 +364,7 @@ class InferenceTask(BaseModel):
             f"{self.output_bucket_name=} with {bucket_key=}"
         )
 
-        s3_client.upload_fileobj(
+        self._s3_client.upload_fileobj(
             Fileobj=fileobj,
             Bucket=self.output_bucket_name,
             Key=bucket_key,

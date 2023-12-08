@@ -6,20 +6,15 @@ from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
 
+import boto3
 import pytest
 
 from sagemaker_shim.logging import LOGGING_CONFIG
-from sagemaker_shim.models import (
-    InferenceIO,
-    InferenceResult,
-    InferenceTask,
-    get_s3_client,
-)
+from sagemaker_shim.models import InferenceIO, InferenceResult, InferenceTask
 from tests.utils import encode_b64j
 
 
 def test_input_download(minio, tmp_path, monkeypatch):
-    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -43,17 +38,17 @@ def test_input_download(minio, tmp_path, monkeypatch):
     # Prep input bucket
     root_data = os.urandom(8)
     root_f = io.BytesIO(root_data)
-    s3_client.upload_fileobj(
+    task._s3_client.upload_fileobj(
         root_f, minio.input_bucket_name, f"{prefix}/root.bin"
     )
 
     sub_data = os.urandom(8)
     sub_f = io.BytesIO(sub_data)
-    s3_client.upload_fileobj(
+    task._s3_client.upload_fileobj(
         sub_f, minio.input_bucket_name, f"{prefix}/sub/dir.bin"
     )
 
-    response = s3_client.list_objects_v2(
+    response = task._s3_client.list_objects_v2(
         Bucket=minio.input_bucket_name,
         Prefix=prefix,
     )
@@ -81,7 +76,6 @@ def test_input_download(minio, tmp_path, monkeypatch):
 
 
 def test_input_decompress(minio, tmp_path, monkeypatch):
-    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -103,11 +97,11 @@ def test_input_decompress(minio, tmp_path, monkeypatch):
     with ZipFile(file=sub_f, mode="w") as zip:
         zip.writestr("sdsdaf/test.txt", str(pk))
     sub_f.seek(0)
-    s3_client.upload_fileobj(
+    task._s3_client.upload_fileobj(
         sub_f, minio.input_bucket_name, f"{prefix}/sub/predictions.zip"
     )
 
-    response = s3_client.list_objects_v2(
+    response = task._s3_client.list_objects_v2(
         Bucket=minio.input_bucket_name,
         Prefix=prefix,
     )
@@ -130,7 +124,9 @@ def test_input_decompress(minio, tmp_path, monkeypatch):
 
 
 def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
-    s3_client = get_s3_client()
+    s3_client = boto3.client(
+        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+    )
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {
@@ -183,7 +179,9 @@ def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
 
 
 def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
-    s3_client = get_s3_client()
+    s3_client = boto3.client(
+        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+    )
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {
@@ -234,7 +232,9 @@ def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
 
 
 def test_output_upload(minio, tmp_path, monkeypatch):
-    s3_client = get_s3_client()
+    s3_client = boto3.client(
+        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+    )
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -261,7 +261,7 @@ def test_output_upload(minio, tmp_path, monkeypatch):
     )
     task.upload_output()
 
-    response = s3_client.list_objects_v2(
+    response = task._s3_client.list_objects_v2(
         Bucket=minio.output_bucket_name,
         Prefix=prefix,
     )
@@ -301,7 +301,6 @@ def test_output_upload(minio, tmp_path, monkeypatch):
 async def test_inference_result_upload(
     minio, tmp_path, monkeypatch, cmd, expected_return_code
 ):
-    s3_client = get_s3_client()
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -322,7 +321,7 @@ async def test_inference_result_upload(
     assert direct_invocation.pk == pk
 
     serialised_invocation = io.BytesIO()
-    s3_client.download_fileobj(
+    task._s3_client.download_fileobj(
         Fileobj=serialised_invocation,
         Bucket=minio.output_bucket_name,
         Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
