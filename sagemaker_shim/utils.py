@@ -19,11 +19,15 @@ def _filter_members(members: list[zipfile.ZipInfo]) -> list[dict[str, str]]:
         and re.search(r"(__MACOSX|\.DS_Store|desktop.ini)", m.filename) is None
     ]
 
-    # Remove any common parent directories
-    if len(members) == 1:
+    if len(members) == 0:
+        # No files present
+        return []
+    elif len(members) == 1:
+        # Only one file, remove any parent directory
         path = str(Path(members[0].filename).parent)
         path = "" if path == "." else path
     else:
+        # Remove the common file paths
         path = commonpath([m.filename for m in members])
 
     if path:
