@@ -74,7 +74,40 @@ There are three endpoints:
   ```
 
   The endpoint will return an object containing the return code of the subprocess in `response["return_code"]`,
-  and any outputs will be placed in the output bucket at the output prefix.
+  and any outputs will be placed in the output bucket at the output prefix. A file with the inference outputs
+  will also be located at `s3://<output_bucket_name>/<output_prefix>/.sagemaker_shim/inference_result.json`
+
+### `sagemaker-shim invoke`
+
+This will invoke the model directly given the arguments. You can specify either:
+
+- `-f / --file`: S3 URI of a JSON file containing a list of task definitions, e.g. `s3://my-bucket/invocations.json`
+- `-t / --tasks`: A JSON string of task definitions
+
+In both cases the contents of the file or string will be an array of task objects:
+
+```json
+[
+    {
+        "pk": "unique-test-id-1",
+        "inputs": [
+            ...
+        ],
+        "output_bucket_name": "name-of-output-bucket",
+        "output_prefix": "/prefix/of/output/files-1",
+    },
+    {
+        "pk": "unique-test-id-2",
+        "inputs": [
+            ...
+        ],
+        "output_bucket_name": "name-of-output-bucket",
+        "output_prefix": "/prefix/of/output/files-2",
+    }
+]
+```
+
+A file with the inference outputs will be located at `s3://<output_bucket_name>/<output_prefix>/.sagemaker_shim/inference_result.json`.
 
 ### Patching an Existing Container
 
