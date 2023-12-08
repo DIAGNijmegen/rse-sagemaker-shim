@@ -11,28 +11,31 @@ logger = logging.getLogger(__name__)
 
 
 def _filter_members(members: list[zipfile.ZipInfo]) -> list[dict[str, str]]:
-    """Filter common prefixes and uninteresting files from a zip archive"""
-    members = [
+    """Filter common paths and uninteresting files from a zip archive"""
+    valid_files = [
         m
         for m in members
         if not m.is_dir()
         and re.search(r"(__MACOSX|\.DS_Store|desktop.ini)", m.filename) is None
     ]
 
-    # Remove any common parent directories
-    if len(members) == 1:
-        path = str(Path(members[0].filename).parent)
-        path = "" if path == "." else path
+    if len(valid_files) == 0:
+        # No files present
+        return []
+    elif len(valid_files) == 1:
+        common_directory = str(Path(valid_files[0].filename).parent)
+        common_directory = "" if common_directory == "." else common_directory
     else:
-        path = commonpath([m.filename for m in members])
+        common_directory = commonpath([m.filename for m in valid_files])
 
-    if path:
-        sliced_path = slice(len(path) + 1, None, None)
+    if common_directory:
+        sliced_directory = slice(len(common_directory) + 1, None, None)
     else:
-        sliced_path = slice(None, None, None)
+        sliced_directory = slice(None, None, None)
 
     return [
-        {"src": m.filename, "dest": m.filename[sliced_path]} for m in members
+        {"src": f.filename, "dest": f.filename[sliced_directory]}
+        for f in valid_files
     ]
 
 
