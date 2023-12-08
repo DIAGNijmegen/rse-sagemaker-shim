@@ -16,10 +16,10 @@ def test_blank_prefix():
             pk="test", inputs=[], output_bucket_name="test", output_prefix=""
         )
 
-    assert str(error) == (
-        "<ExceptionInfo ValidationError(model='InferenceTask', "
-        "errors=[{'loc': ('output_prefix',), "
-        "'msg': 'Prefix cannot be blank', 'type': 'value_error'}]) tblen=2>"
+    assert str(error).startswith(
+        "<ExceptionInfo 1 validation error for InferenceTask\n"
+        "output_prefix\n"
+        "  Value error, Prefix cannot be blank [type=value_error, input_value='', input_type=str]\n"
     )
 
 
