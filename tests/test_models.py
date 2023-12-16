@@ -64,17 +64,19 @@ def test_removing_ld_library_path(monkeypatch):
 @pytest.mark.parametrize(
     "user,expected_user,expected_group",
     (
-        ("0", 0, None),
+        ("0", 0, 0),
         ("0:0", 0, 0),
         (":0", None, 0),
         ("", None, None),
-        ("root", 0, None),
+        ("root", 0, 0),
         (f"root:{grp.getgrgid(0).gr_name}", 0, 0),
         (f":{grp.getgrgid(0).gr_name}", None, 0),
         ("", None, None),
         ("🙈:🙉", None, None),
         ("root:0", 0, 0),
         (f"0:{grp.getgrgid(0).gr_name}", 0, 0),
+        (f":{os.getgid()}", None, os.getgid()),
+        (f"root:{os.getgid()}", 0, os.getgid()),
     ),
 )
 def test_proc_user(monkeypatch, user, expected_user, expected_group):
