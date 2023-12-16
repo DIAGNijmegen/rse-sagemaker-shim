@@ -1,9 +1,11 @@
 import asyncio
 import logging.config
+import os
 import sys
 from collections.abc import Callable, Coroutine
 from functools import wraps
 from json import JSONDecodeError
+from pathlib import Path
 from typing import Any, TypeVar
 
 import click
@@ -28,9 +30,19 @@ def async_to_sync(
     return wrapper
 
 
+def _ensure_directories_are_writable() -> None:
+    for directory in os.environ.get(
+        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", ""
+    ).split(":"):
+        path = Path(directory)
+        path.mkdir(exist_ok=True, parents=True)
+        path.chmod(mode=0o777)
+
+
 @click.group()
 def cli() -> None:
     logging.config.dictConfig(LOGGING_CONFIG)
+    _ensure_directories_are_writable()
 
 
 @cli.command(short_help="Start the model server")
