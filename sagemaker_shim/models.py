@@ -157,8 +157,8 @@ class InferenceResult(BaseModel):
 
 
 class UserGroup(NamedTuple):
-    user: int | None
-    group: int | None
+    uid: int | None
+    gid: int | None
 
 
 class InferenceTask(BaseModel):
@@ -284,6 +284,10 @@ class InferenceTask(BaseModel):
         else:
             env.pop(lp_key, None)
 
+        if self.proc_user.uid is not None:
+            pw_record = pwd.getpwuid(self.proc_user.uid)
+            env["HOME"] = pw_record.pw_dir
+
         return env
 
     @staticmethod
@@ -318,7 +322,7 @@ class InferenceTask(BaseModel):
 
         return out
 
-    @property
+    @cached_property
     def proc_user(self) -> UserGroup:
         match = re.fullmatch(
             r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self.user
@@ -326,11 +330,11 @@ class InferenceTask(BaseModel):
 
         if match:
             return UserGroup(
-                user=self._get_user_or_group_id(match=match, key="user"),
-                group=self._get_user_or_group_id(match=match, key="group"),
+                uid=self._get_user_or_group_id(match=match, key="user"),
+                gid=self._get_user_or_group_id(match=match, key="group"),
             )
         else:
-            return UserGroup(user=None, group=None)
+            return UserGroup(uid=None, gid=None)
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""
@@ -458,8 +462,8 @@ class InferenceTask(BaseModel):
 
         process = await asyncio.create_subprocess_exec(
             *self.proc_args,
-            user=self.proc_user.user,
-            group=self.proc_user.group,
+            user=self.proc_user.uid,
+            group=self.proc_user.gid,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,
