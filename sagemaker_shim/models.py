@@ -1,18 +1,21 @@
 import asyncio
 import errno
+import grp
 import io
 import json
 import logging
 import os
+import pwd
 import re
 import subprocess
 from base64 import b64decode
+from collections.abc import Callable
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
 from shutil import rmtree
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
 import boto3
@@ -153,6 +156,11 @@ class InferenceResult(BaseModel):
     sagemaker_shim_version: str = version("sagemaker-shim")
 
 
+class UserGroup(NamedTuple):
+    user: int | None
+    group: int | None
+
+
 class InferenceTask(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -204,6 +212,10 @@ class InferenceTask(BaseModel):
         )
         logger.debug(f"{entrypoint=}")
         return entrypoint
+
+    @property
+    def user(self) -> str:
+        return os.environ.get("GRAND_CHALLENGE_COMPONENT_USER", "")
 
     @property
     def input_path(self) -> Path:
@@ -273,6 +285,52 @@ class InferenceTask(BaseModel):
             env.pop(lp_key, None)
 
         return env
+
+    @staticmethod
+    def _get_user_or_group_id(*, match: re.Match[str], key: str) -> int | None:
+        value = match.group(key)
+
+        if value == "":
+            return None
+
+        if key == "user":
+            name_lookup: Callable[
+                [str], pwd.struct_passwd | grp.struct_group
+            ] = pwd.getpwnam
+            id_lookup: Callable[
+                [int], pwd.struct_passwd | grp.struct_group
+            ] = pwd.getpwuid
+            attr = "pw_uid"
+        elif key == "group":
+            name_lookup = grp.getgrnam
+            id_lookup = grp.getgrgid
+            attr = "gr_gid"
+        else:
+            raise RuntimeError("Unknown key")
+
+        try:
+            out: int = getattr(name_lookup(value), attr)
+        except (KeyError, AttributeError):
+            try:
+                out = getattr(id_lookup(int(value)), attr)
+            except (KeyError, ValueError, AttributeError) as error:
+                raise RuntimeError(f"{key} {value} not found") from error
+
+        return out
+
+    @property
+    def proc_user(self) -> UserGroup:
+        match = re.fullmatch(
+            r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self.user
+        )
+
+        if match:
+            return UserGroup(
+                user=self._get_user_or_group_id(match=match, key="user"),
+                group=self._get_user_or_group_id(match=match, key="group"),
+            )
+        else:
+            return UserGroup(user=None, group=None)
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""
@@ -400,6 +458,8 @@ class InferenceTask(BaseModel):
 
         process = await asyncio.create_subprocess_exec(
             *self.proc_args,
+            user=self.proc_user.user,
+            group=self.proc_user.group,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,

@@ -1,3 +1,4 @@
+import grp
 import os
 
 import pytest
@@ -57,3 +58,41 @@ def test_removing_ld_library_path(monkeypatch):
 
     assert "LD_LIBRARY_PATH" not in t.proc_env
     assert env["LD_LIBRARY_PATH"] == "present"
+
+
+@pytest.mark.parametrize(
+    "user,expected_user,expected_group",
+    (
+        ("0", 0, None),
+        ("0:0", 0, 0),
+        (":0", None, 0),
+        ("", None, None),
+        ("root", 0, None),
+        (f"root:{grp.getgrgid(0).gr_name}", 0, 0),
+        (f":{grp.getgrgid(0).gr_name}", None, 0),
+        ("", None, None),
+        ("🙈:🙉", None, None),
+        ("root:0", 0, 0),
+        (f"0:{grp.getgrgid(0).gr_name}", 0, 0),
+    ),
+)
+def test_proc_user(monkeypatch, user, expected_user, expected_group):
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", user)
+
+    t = InferenceTask(
+        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+    )
+
+    assert t.user == user
+    assert t.proc_user.user == expected_user
+    assert t.proc_user.group == expected_group
+
+
+def test_proc_user_unset():
+    t = InferenceTask(
+        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+    )
+
+    assert t.user == ""
+    assert t.proc_user.user is None
+    assert t.proc_user.group is None
