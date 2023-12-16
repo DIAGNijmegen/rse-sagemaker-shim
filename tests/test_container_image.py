@@ -93,6 +93,7 @@ def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
                 init=False,
                 environment=container_env,
                 links={minio.container.name: "minio"},
+                user=0,
             )
 
             # Wait for startup

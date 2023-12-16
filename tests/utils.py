@@ -62,6 +62,7 @@ def get_new_env_vars(*, existing_config: dict[str, Any]) -> dict[str, str]:
         "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J": encode_b64j(
             val=entrypoint
         ),
+        "GRAND_CHALLENGE_COMPONENT_USER": "0:0",
     }
 
 
