@@ -12,7 +12,7 @@ from importlib.metadata import version
 from pathlib import Path
 from shutil import rmtree
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
 import boto3
@@ -153,6 +153,11 @@ class InferenceResult(BaseModel):
     sagemaker_shim_version: str = version("sagemaker-shim")
 
 
+class UserGroup(NamedTuple):
+    user: str | None
+    group: str | None
+
+
 class InferenceTask(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -279,18 +284,18 @@ class InferenceTask(BaseModel):
         return env
 
     @property
-    def proc_user(self) -> dict[str, str | None]:
+    def proc_user(self) -> UserGroup:
         match = re.fullmatch(
             r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self.user
         )
 
         if match:
-            return {
-                "user": match.group("user") or None,
-                "group": match.group("group") or None,
-            }
+            return UserGroup(
+                user=match.group("user") or None,
+                group=match.group("group") or None,
+            )
         else:
-            return {"user": None, "group": None}
+            return UserGroup(user=None, group=None)
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""
@@ -418,8 +423,8 @@ class InferenceTask(BaseModel):
 
         process = await asyncio.create_subprocess_exec(
             *self.proc_args,
-            user=self.proc_user["user"],
-            group=self.proc_user["group"],
+            user=self.proc_user.user,
+            group=self.proc_user.group,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,

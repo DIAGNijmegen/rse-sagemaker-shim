@@ -81,7 +81,8 @@ def test_proc_user(monkeypatch, user, expected_user, expected_group):
     )
 
     assert t.user == user
-    assert t.proc_user == {"user": expected_user, "group": expected_group}
+    assert t.proc_user.user == expected_user
+    assert t.proc_user.group == expected_group
 
 
 def test_proc_user_unset():
@@ -90,4 +91,5 @@ def test_proc_user_unset():
     )
 
     assert t.user == ""
-    assert t.proc_user == {"user": None, "group": None}
+    assert t.proc_user.user is None
+    assert t.proc_user.group is None
