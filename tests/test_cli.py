@@ -218,3 +218,30 @@ def test_logging_stderr_setup(minio, monkeypatch):
         '{"log": "hello", "level": "WARNING", '
         f'"source": "stderr", "internal": false, "task": "{pk}"}}'
     ) in result.output
+
+
+def test_ensure_directories_are_writable(tmp_path, monkeypatch):
+    data = tmp_path / "opt" / "ml" / "output" / "data"
+    data.mkdir(mode=0o755, parents=True)
+
+    model = tmp_path / "opt" / "ml" / "model"
+    model.mkdir(mode=0o755, parents=True)
+
+    # Do not create the checkpoints dir in the test
+    checkpoints = tmp_path / "opt" / "ml" / "checkpoints"
+
+    tmp = tmp_path / "tmp"
+    tmp.mkdir(mode=0o755)
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES",
+        f"{data.absolute()}:{model.absolute()}:{checkpoints.absolute()}:{tmp.absolute()}",
+    )
+
+    runner = CliRunner()
+    runner.invoke(cli, ["invoke"])
+
+    assert data.stat().st_mode == 0o40777
+    assert model.stat().st_mode == 0o40777
+    assert checkpoints.stat().st_mode == 0o40777
+    assert tmp.stat().st_mode == 0o40777
