@@ -62,15 +62,18 @@ def test_removing_ld_library_path(monkeypatch):
 @pytest.mark.parametrize(
     "user,expected_user,expected_group",
     (
-        ("1000", "1000", None),
-        ("1000:1000", "1000", "1000"),
-        (":1000", None, "1000"),
+        ("1000", 1000, None),
+        ("1000:1000", 1000, 1000),
+        (":1000", None, 1000),
         ("", None, None),
         ("myuser", "myuser", None),
         ("myuser:myuser", "myuser", "myuser"),
         (":myuser", None, "myuser"),
         ("", None, None),
         ("🙈:🙉", None, None),
+        ("myuser:1000", "myuser", 1000),
+        ("1000:myuser", 1000, "myuser"),
+        ("0:myuser", 0, "myuser"),
     ),
 )
 def test_proc_user(monkeypatch, user, expected_user, expected_group):

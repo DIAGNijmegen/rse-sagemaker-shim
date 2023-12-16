@@ -79,4 +79,5 @@ def test_patch_image(registry):
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J=WyJzaCJd",
         "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J=bnVsbA==",
+        "GRAND_CHALLENGE_COMPONENT_USER=0",
     }

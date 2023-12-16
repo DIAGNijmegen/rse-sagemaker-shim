@@ -154,8 +154,8 @@ class InferenceResult(BaseModel):
 
 
 class UserGroup(NamedTuple):
-    user: str | None
-    group: str | None
+    user: str | int | None
+    group: str | int | None
 
 
 class InferenceTask(BaseModel):
@@ -283,6 +283,13 @@ class InferenceTask(BaseModel):
 
         return env
 
+    @staticmethod
+    def _string_to_int(value: str) -> str | int | None:
+        try:
+            return int(value)
+        except ValueError:
+            return value or None
+
     @property
     def proc_user(self) -> UserGroup:
         match = re.fullmatch(
@@ -291,8 +298,8 @@ class InferenceTask(BaseModel):
 
         if match:
             return UserGroup(
-                user=match.group("user") or None,
-                group=match.group("group") or None,
+                user=self._string_to_int(match.group("user")),
+                group=self._string_to_int(match.group("group")),
             )
         else:
             return UserGroup(user=None, group=None)
