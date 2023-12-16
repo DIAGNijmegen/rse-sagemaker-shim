@@ -1,12 +1,15 @@
 import asyncio
 import errno
+import grp
 import io
 import json
 import logging
 import os
+import pwd
 import re
 import subprocess
 from base64 import b64decode
+from collections.abc import Callable
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
@@ -154,8 +157,8 @@ class InferenceResult(BaseModel):
 
 
 class UserGroup(NamedTuple):
-    user: str | int | None
-    group: str | int | None
+    user: int | None
+    group: int | None
 
 
 class InferenceTask(BaseModel):
@@ -284,11 +287,36 @@ class InferenceTask(BaseModel):
         return env
 
     @staticmethod
-    def _string_to_int(value: str) -> str | int | None:
+    def _get_user_or_group_id(*, match: re.Match[str], key: str) -> int | None:
+        value = match.group(key)
+
+        if value == "":
+            return None
+
+        if key == "user":
+            name_lookup: Callable[
+                [str], pwd.struct_passwd | grp.struct_group
+            ] = pwd.getpwnam
+            id_lookup: Callable[
+                [int], pwd.struct_passwd | grp.struct_group
+            ] = pwd.getpwuid
+            attr = "pw_uid"
+        elif key == "group":
+            name_lookup = grp.getgrnam
+            id_lookup = grp.getgrgid
+            attr = "gr_gid"
+        else:
+            raise RuntimeError("Unknown key")
+
         try:
-            return int(value)
-        except ValueError:
-            return value or None
+            out: int = getattr(name_lookup(value), attr)
+        except (KeyError, AttributeError):
+            try:
+                out = getattr(id_lookup(int(value)), attr)
+            except (KeyError, ValueError, AttributeError) as error:
+                raise RuntimeError(f"{key} {value} not found") from error
+
+        return out
 
     @property
     def proc_user(self) -> UserGroup:
@@ -298,8 +326,8 @@ class InferenceTask(BaseModel):
 
         if match:
             return UserGroup(
-                user=self._string_to_int(match.group("user")),
-                group=self._string_to_int(match.group("group")),
+                user=self._get_user_or_group_id(match=match, key="user"),
+                group=self._get_user_or_group_id(match=match, key="group"),
             )
         else:
             return UserGroup(user=None, group=None)
