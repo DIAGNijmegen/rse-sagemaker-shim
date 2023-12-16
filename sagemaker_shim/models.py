@@ -458,8 +458,8 @@ class InferenceTask(BaseModel):
 
         process = await asyncio.create_subprocess_exec(
             *self.proc_args,
-            user=None,
-            # group=self.proc_user.group,
+            user=self.proc_user.user,
+            group=self.proc_user.group,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,

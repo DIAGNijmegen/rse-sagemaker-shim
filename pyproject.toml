@@ -18,7 +18,7 @@ sagemaker-shim = "sagemaker_shim.cli:cli"
 # Only support one version of python at a time
 python = "^3.11,<3.12"
 fastapi = "!=0.89.0"
-uvicorn = {extras = ["standard"], version = "*"}
+uvicorn = "*"
 click = "*"
 boto3 = "*"
 
