@@ -12,7 +12,6 @@ from base64 import b64decode
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
-from shutil import rmtree
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
@@ -366,21 +365,8 @@ class InferenceTask(BaseModel):
     async def _invoke(self) -> InferenceResult:
         logger.info(f"Invoking {self.pk=}")
 
-        ignore_clean_errors = False
-
         try:
-            try:
-                self.clean_io(ignore_errors=ignore_clean_errors)
-            except PermissionError as error:
-                self.log_external(
-                    level=logging.ERROR,
-                    msg=(
-                        f"Could not clean '{self.input_path}' and/or "
-                        f"'{self.output_path}' directories: {error}"
-                    ),
-                )
-                ignore_clean_errors = True
-                return InferenceResult(pk=self.pk, return_code=1, outputs=[])
+            self.clean_io()
 
             try:
                 self.download_input()
@@ -399,21 +385,23 @@ class InferenceTask(BaseModel):
                 pk=self.pk, return_code=return_code, outputs=outputs
             )
         finally:
-            self.clean_io(ignore_errors=ignore_clean_errors)
+            self.clean_io()
 
-    def clean_io(self, *, ignore_errors: bool = False) -> None:
+    def clean_io(self) -> None:
         """Clean all contents of input and output folders"""
-        self._clean_path(path=self.input_path, ignore_errors=ignore_errors)
-        self._clean_path(path=self.output_path, ignore_errors=ignore_errors)
+        self._clean_path(path=self.input_path)
+        self._clean_path(path=self.output_path)
 
-    @staticmethod
-    def _clean_path(*, path: Path, ignore_errors: bool) -> None:
+    def _clean_path(self, *, path: Path) -> None:
         """Removes contents of a directory, keeping the parent"""
         for f in path.glob("**/*"):
             if f.is_file():
+                f.chmod(0o700)
                 f.unlink()
             elif f.is_dir():
-                rmtree(path=f, ignore_errors=ignore_errors)
+                f.chmod(0o700)
+                self._clean_path(path=f)
+                f.rmdir()
 
     def download_input(self) -> None:
         """Download all the inputs to the input path"""

@@ -338,6 +338,11 @@ def test_folder_cleanup(tmp_path):
     for f in ["test", ".test", "test/test", "test/.test", "nested/test/.test"]:
         (tmp_path / f).touch()
 
-    InferenceTask._clean_path(path=tmp_path, ignore_errors=False)
+    InferenceTask(
+        pk="das",
+        inputs=[],
+        output_bucket_name="FDAS",
+        output_prefix="fdsa",
+    )._clean_path(path=tmp_path)
 
     assert [*tmp_path.rglob("**/*")] == []
