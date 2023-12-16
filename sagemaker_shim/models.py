@@ -394,7 +394,7 @@ class InferenceTask(BaseModel):
 
     def _clean_path(self, *, path: Path) -> None:
         """Removes contents of a directory, keeping the parent"""
-        for f in path.glob("**/*"):
+        for f in path.glob("*"):
             if f.is_file():
                 f.chmod(0o700)
                 f.unlink()
