@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from click.testing import CliRunner
 
-from sagemaker_shim.cli import cli
+from sagemaker_shim.cli import _get_writable_directories, cli
 from sagemaker_shim.models import get_s3_client, get_s3_file_content
 from tests.utils import encode_b64j
 
@@ -245,3 +245,28 @@ def test_ensure_directories_are_writable(tmp_path, monkeypatch):
     assert model.stat().st_mode == 0o40777
     assert checkpoints.stat().st_mode == 0o40777
     assert tmp.stat().st_mode == 0o40777
+
+
+def test_ensure_directories_are_writable_unset():
+    assert _get_writable_directories() == []
+
+
+@pytest.mark.parametrize(
+    "directories,expected",
+    (
+        ("", []),
+        ("/tmp", ["/tmp"]),
+        ("/tmp:/foo/bar", ["/tmp", "/foo/bar"]),
+        ("/tmp::", ["/tmp"]),
+        (":", []),
+        ("::", []),
+    ),
+)
+def test_ensure_directories_are_writable_set(
+    monkeypatch, directories, expected
+):
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES",
+        directories,
+    )
+    assert _get_writable_directories() == expected

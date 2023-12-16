@@ -30,10 +30,15 @@ def async_to_sync(
     return wrapper
 
 
-def _ensure_directories_are_writable() -> None:
-    for directory in os.environ.get(
+def _get_writable_directories() -> list[str]:
+    directories_str = os.environ.get(
         "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", ""
-    ).split(":"):
+    )
+    return [d for d in directories_str.split(":") if d != ""]
+
+
+def _ensure_directories_are_writable() -> None:
+    for directory in _get_writable_directories():
         path = Path(directory)
         path.mkdir(exist_ok=True, parents=True)
         path.chmod(mode=0o777)
