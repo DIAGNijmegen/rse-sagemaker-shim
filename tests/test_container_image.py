@@ -32,7 +32,7 @@ def _container_helper(request) -> None:
 
 
 @contextmanager
-def _container(*, base_image="hello-world:latest", host_port=8080, cmd=None):
+def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
     client = docker.from_env()
     registry = client.containers.run(
         image="registry:2.7",
