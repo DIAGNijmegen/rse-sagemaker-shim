@@ -1,5 +1,6 @@
 import grp
 import os
+import pwd
 
 import pytest
 
@@ -84,8 +85,8 @@ def test_proc_user(monkeypatch, user, expected_user, expected_group):
     )
 
     assert t.user == user
-    assert t.proc_user.user == expected_user
-    assert t.proc_user.group == expected_group
+    assert t.proc_user.uid == expected_user
+    assert t.proc_user.gid == expected_group
 
 
 def test_proc_user_unset():
@@ -94,5 +95,15 @@ def test_proc_user_unset():
     )
 
     assert t.user == ""
-    assert t.proc_user.user is None
-    assert t.proc_user.group is None
+    assert t.proc_user.uid is None
+    assert t.proc_user.gid is None
+
+
+def test_home_is_set(monkeypatch):
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", "root")
+
+    t = InferenceTask(
+        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+    )
+
+    assert t.proc_env["HOME"] == pwd.getpwnam("root").pw_dir
