@@ -1,3 +1,4 @@
+import grp
 import os
 
 import pytest
@@ -67,12 +68,12 @@ def test_removing_ld_library_path(monkeypatch):
         (":0", None, 0),
         ("", None, None),
         ("root", 0, None),
-        # ("root:admin", 0, 0),
-        # (":admin", None, 0),
+        (f"root:{grp.getgrgid(0).gr_name}", 0, 0),
+        (f":{grp.getgrgid(0).gr_name}", None, 0),
         ("", None, None),
         ("🙈:🙉", None, None),
         ("root:0", 0, 0),
-        # ("0:admin", 0, 0),
+        (f"0:{grp.getgrgid(0).gr_name}", 0, 0),
     ),
 )
 def test_proc_user(monkeypatch, user, expected_user, expected_group):
