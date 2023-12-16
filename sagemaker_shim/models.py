@@ -9,7 +9,6 @@ import pwd
 import re
 import subprocess
 from base64 import b64decode
-from collections.abc import Callable
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
@@ -159,6 +158,7 @@ class InferenceResult(BaseModel):
 class UserGroup(NamedTuple):
     uid: int | None
     gid: int | None
+    home: str | None
 
 
 class InferenceTask(BaseModel):
@@ -284,43 +284,36 @@ class InferenceTask(BaseModel):
         else:
             env.pop(lp_key, None)
 
-        if self.proc_user.uid is not None:
-            pw_record = pwd.getpwuid(self.proc_user.uid)
-            env["HOME"] = pw_record.pw_dir
+        if self.proc_user.home is not None:
+            env["HOME"] = self.proc_user.home
 
         return env
 
     @staticmethod
-    def _get_user_or_group_id(*, match: re.Match[str], key: str) -> int | None:
-        value = match.group(key)
-
-        if value == "":
+    def _get_user_info(id_or_name: str) -> pwd.struct_passwd | None:
+        if id_or_name == "":
             return None
 
-        if key == "user":
-            name_lookup: Callable[
-                [str], pwd.struct_passwd | grp.struct_group
-            ] = pwd.getpwnam
-            id_lookup: Callable[
-                [int], pwd.struct_passwd | grp.struct_group
-            ] = pwd.getpwuid
-            attr = "pw_uid"
-        elif key == "group":
-            name_lookup = grp.getgrnam
-            id_lookup = grp.getgrgid
-            attr = "gr_gid"
-        else:
-            raise RuntimeError("Unknown key")
-
         try:
-            out: int = getattr(name_lookup(value), attr)
+            return pwd.getpwnam(id_or_name)
         except (KeyError, AttributeError):
             try:
-                out = getattr(id_lookup(int(value)), attr)
+                return pwd.getpwuid(int(id_or_name))
             except (KeyError, ValueError, AttributeError) as error:
-                raise RuntimeError(f"{key} {value} not found") from error
+                raise RuntimeError(f"User {id_or_name} not found") from error
 
-        return out
+    @staticmethod
+    def _get_group_info(id_or_name: str) -> grp.struct_group | None:
+        if id_or_name == "":
+            return None
+
+        try:
+            return grp.getgrnam(id_or_name)
+        except (KeyError, AttributeError):
+            try:
+                return grp.getgrgid(int(id_or_name))
+            except (KeyError, ValueError, AttributeError) as error:
+                raise RuntimeError(f"Group {id_or_name} not found") from error
 
     @cached_property
     def proc_user(self) -> UserGroup:
@@ -329,12 +322,28 @@ class InferenceTask(BaseModel):
         )
 
         if match:
-            return UserGroup(
-                uid=self._get_user_or_group_id(match=match, key="user"),
-                gid=self._get_user_or_group_id(match=match, key="group"),
-            )
+            user = self._get_user_info(id_or_name=match.group("user"))
+            group = self._get_group_info(id_or_name=match.group("group"))
+
+            if user is None:
+                uid = None
+                home = None
+            else:
+                uid = user.pw_uid
+                home = user.pw_dir
+
+            if group is None:
+                if user is None:
+                    gid = None
+                else:
+                    # Switch to the users primary group
+                    gid = user.pw_gid
+            else:
+                gid = group.gr_gid
+
+            return UserGroup(uid=uid, gid=gid, home=home)
         else:
-            return UserGroup(uid=None, gid=None)
+            return UserGroup(uid=None, gid=None, home=None)
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""
