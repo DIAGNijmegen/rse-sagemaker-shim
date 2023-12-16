@@ -206,6 +206,10 @@ class InferenceTask(BaseModel):
         return entrypoint
 
     @property
+    def user(self) -> str:
+        return os.environ.get("GRAND_CHALLENGE_COMPONENT_USER", "")
+
+    @property
     def input_path(self) -> Path:
         """Local path where the subprocess is expected to read its input files"""
         input_path = Path(
@@ -273,6 +277,20 @@ class InferenceTask(BaseModel):
             env.pop(lp_key, None)
 
         return env
+
+    @property
+    def proc_user(self) -> dict[str, str | None]:
+        match = re.fullmatch(
+            r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self.user
+        )
+
+        if match:
+            return {
+                "user": match.group("user") or None,
+                "group": match.group("group") or None,
+            }
+        else:
+            return {"user": None, "group": None}
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""
@@ -400,6 +418,8 @@ class InferenceTask(BaseModel):
 
         process = await asyncio.create_subprocess_exec(
             *self.proc_args,
+            user=self.proc_user["user"],
+            group=self.proc_user["group"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,

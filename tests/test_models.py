@@ -57,3 +57,37 @@ def test_removing_ld_library_path(monkeypatch):
 
     assert "LD_LIBRARY_PATH" not in t.proc_env
     assert env["LD_LIBRARY_PATH"] == "present"
+
+
+@pytest.mark.parametrize(
+    "user,expected_user,expected_group",
+    (
+        ("1000", "1000", None),
+        ("1000:1000", "1000", "1000"),
+        (":1000", None, "1000"),
+        ("", None, None),
+        ("myuser", "myuser", None),
+        ("myuser:myuser", "myuser", "myuser"),
+        (":myuser", None, "myuser"),
+        ("", None, None),
+        ("🙈:🙉", None, None),
+    ),
+)
+def test_proc_user(monkeypatch, user, expected_user, expected_group):
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", user)
+
+    t = InferenceTask(
+        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+    )
+
+    assert t.user == user
+    assert t.proc_user == {"user": expected_user, "group": expected_group}
+
+
+def test_proc_user_unset():
+    t = InferenceTask(
+        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+    )
+
+    assert t.user == ""
+    assert t.proc_user == {"user": None, "group": None}

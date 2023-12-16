@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sagemaker-shim"
-version = "0.2.0"
+version = "0.2.1-alpha"
 description = "Adapts algorithms that implement the Grand Challenge inference API for running in SageMaker"
 authors = ["James Meakin <12661555+jmsmkn@users.noreply.github.com>"]
 license = "Apache-2.0"
