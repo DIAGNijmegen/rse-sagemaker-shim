@@ -158,12 +158,12 @@ class UserInfo(NamedTuple):
     uid: int | None
     gid: int | None
     home: str | None
-    extra_groups: list[int]
+    groups: list[int]
 
 
 def _get_user_info(id_or_name: str) -> UserInfo:
     if id_or_name == "":
-        return UserInfo(uid=None, gid=None, home=None, extra_groups=[])
+        return UserInfo(uid=None, gid=None, home=None, groups=[])
 
     try:
         user = pwd.getpwnam(id_or_name)
@@ -176,13 +176,13 @@ def _get_user_info(id_or_name: str) -> UserInfo:
         try:
             user = pwd.getpwuid(uid)
         except (KeyError, AttributeError):
-            return UserInfo(uid=uid, gid=None, home=None, extra_groups=[])
+            return UserInfo(uid=uid, gid=None, home=None, groups=[])
 
     return UserInfo(
         uid=user.pw_uid,
         gid=user.pw_gid,
         home=user.pw_dir,
-        extra_groups=_get_users_groups(user=user),
+        groups=_get_users_groups(user=user),
     )
 
 
@@ -296,7 +296,7 @@ class InferenceTask(BaseModel):
             ).lower()
             == "true"
         ):
-            return self.proc_user.extra_groups
+            return self.proc_user.groups
         else:
             return None
 
@@ -357,7 +357,7 @@ class InferenceTask(BaseModel):
     @cached_property
     def proc_user(self) -> UserInfo:
         if self.user == "":
-            return UserInfo(uid=None, gid=None, home=None, extra_groups=[])
+            return UserInfo(uid=None, gid=None, home=None, groups=[])
 
         match = re.fullmatch(
             r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self.user
@@ -371,7 +371,7 @@ class InferenceTask(BaseModel):
                 uid=info.uid,
                 gid=info.gid if gid is None else gid,
                 home=info.home,
-                extra_groups=info.extra_groups,
+                groups=info.groups,
             )
         else:
             raise RuntimeError(f"Invalid user '{self.user}'")
