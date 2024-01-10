@@ -68,7 +68,7 @@ def test_removing_ld_library_path(monkeypatch):
         ("0:0", 0, 0, pwd.getpwnam("root").pw_dir),
         (":0", None, 0, None),
         ("", None, None, None),
-        ("root", 0, 0, "/var/root"),
+        ("root", 0, 0, pwd.getpwnam("root").pw_dir),
         (f"root:{grp.getgrgid(0).gr_name}", 0, 0, pwd.getpwnam("root").pw_dir),
         (f":{grp.getgrgid(0).gr_name}", None, 0, None),
         ("🙈:🙉", None, None, None),
