@@ -462,6 +462,7 @@ class InferenceTask(BaseModel):
             *self.proc_args,
             user=self.proc_user.uid,
             group=self.proc_user.gid,
+            extra_groups=[],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,
