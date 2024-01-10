@@ -289,30 +289,42 @@ class InferenceTask(BaseModel):
         return env
 
     @staticmethod
-    def _get_user_info(id_or_name: str) -> pwd.struct_passwd | None:
+    def _get_user_info(id_or_name: str) -> UserGroup:
         if id_or_name == "":
-            return None
+            return UserGroup(uid=None, gid=None, home=None)
 
         try:
-            return pwd.getpwnam(id_or_name)
+            user = pwd.getpwnam(id_or_name)
         except (KeyError, AttributeError):
             try:
-                return pwd.getpwuid(int(id_or_name))
-            except (KeyError, ValueError, AttributeError) as error:
-                raise RuntimeError(f"User {id_or_name} not found") from error
+                uid = int(id_or_name)
+            except ValueError:
+                raise RuntimeError(
+                    f"User '{id_or_name}' not found"
+                ) from ValueError
+
+            try:
+                user = pwd.getpwuid(uid)
+            except (KeyError, AttributeError):
+                return UserGroup(uid=uid, gid=None, home=None)
+
+        return UserGroup(uid=user.pw_uid, gid=user.pw_gid, home=user.pw_dir)
 
     @staticmethod
-    def _get_group_info(id_or_name: str) -> grp.struct_group | None:
+    def _get_group_info(id_or_name: str) -> int | None:
         if id_or_name == "":
             return None
 
         try:
-            return grp.getgrnam(id_or_name)
+            group = grp.getgrnam(id_or_name)
+            return group.gr_gid
         except (KeyError, AttributeError):
             try:
-                return grp.getgrgid(int(id_or_name))
-            except (KeyError, ValueError, AttributeError) as error:
-                raise RuntimeError(f"Group {id_or_name} not found") from error
+                return int(id_or_name)
+            except ValueError:
+                raise RuntimeError(
+                    f"Group '{id_or_name}' not found"
+                ) from ValueError
 
     @cached_property
     def proc_user(self) -> UserGroup:
@@ -324,21 +336,9 @@ class InferenceTask(BaseModel):
             user = self._get_user_info(id_or_name=match.group("user"))
             group = self._get_group_info(id_or_name=match.group("group"))
 
-            if user is None:
-                uid = None
-                home = None
-            else:
-                uid = user.pw_uid
-                home = user.pw_dir
-
-            if group is None:
-                if user is None:
-                    gid = None
-                else:
-                    # Switch to the users primary group
-                    gid = user.pw_gid
-            else:
-                gid = group.gr_gid
+            uid = user.uid
+            gid = user.gid if group is None else group
+            home = user.home
 
             return UserGroup(uid=uid, gid=gid, home=home)
         else:
