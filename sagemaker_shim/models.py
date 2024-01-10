@@ -234,6 +234,18 @@ class InferenceTask(BaseModel):
         logger.debug(f"{output_path=}")
         return output_path
 
+    @property
+    def extra_groups(self) -> list[int] | None:
+        if (
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_KEEP_EXTRA_GROUPS", "False"
+            ).lower()
+            == "true"
+        ):
+            return None
+        else:
+            return []
+
     @cached_property
     def _s3_client(self) -> S3Client:
         return get_s3_client()
@@ -462,7 +474,7 @@ class InferenceTask(BaseModel):
             *self.proc_args,
             user=self.proc_user.uid,
             group=self.proc_user.gid,
-            extra_groups=[],
+            extra_groups=self.extra_groups,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,
