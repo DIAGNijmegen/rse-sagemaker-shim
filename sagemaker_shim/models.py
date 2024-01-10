@@ -154,7 +154,7 @@ class InferenceResult(BaseModel):
     sagemaker_shim_version: str = version("sagemaker-shim")
 
 
-class UserGroup(NamedTuple):
+class UserInfo(NamedTuple):
     uid: int | None
     gid: int | None
     home: str | None
@@ -289,29 +289,27 @@ class InferenceTask(BaseModel):
         return env
 
     @staticmethod
-    def _get_user_info(id_or_name: str) -> UserGroup:
+    def _get_user_info(id_or_name: str) -> UserInfo:
         if id_or_name == "":
-            return UserGroup(uid=None, gid=None, home=None)
+            return UserInfo(uid=None, gid=None, home=None)
 
         try:
             user = pwd.getpwnam(id_or_name)
         except (KeyError, AttributeError):
             try:
                 uid = int(id_or_name)
-            except ValueError:
-                raise RuntimeError(
-                    f"User '{id_or_name}' not found"
-                ) from ValueError
+            except ValueError as error:
+                raise RuntimeError(f"User '{id_or_name}' not found") from error
 
             try:
                 user = pwd.getpwuid(uid)
             except (KeyError, AttributeError):
-                return UserGroup(uid=uid, gid=None, home=None)
+                return UserInfo(uid=uid, gid=None, home=None)
 
-        return UserGroup(uid=user.pw_uid, gid=user.pw_gid, home=user.pw_dir)
+        return UserInfo(uid=user.pw_uid, gid=user.pw_gid, home=user.pw_dir)
 
     @staticmethod
-    def _get_group_info(id_or_name: str) -> int | None:
+    def _get_group_id(id_or_name: str) -> int | None:
         if id_or_name == "":
             return None
 
@@ -321,29 +319,29 @@ class InferenceTask(BaseModel):
         except (KeyError, AttributeError):
             try:
                 return int(id_or_name)
-            except ValueError:
+            except ValueError as error:
                 raise RuntimeError(
                     f"Group '{id_or_name}' not found"
-                ) from ValueError
+                ) from error
 
     @cached_property
-    def proc_user(self) -> UserGroup:
+    def proc_user(self) -> UserInfo:
         if self.user == "":
-            return UserGroup(uid=None, gid=None, home=None)
+            return UserInfo(uid=None, gid=None, home=None)
 
         match = re.fullmatch(
             r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self.user
         )
 
         if match:
-            user = self._get_user_info(id_or_name=match.group("user"))
-            group = self._get_group_info(id_or_name=match.group("group"))
+            info = self._get_user_info(id_or_name=match.group("user"))
+            gid = self._get_group_id(id_or_name=match.group("group"))
 
-            uid = user.uid
-            gid = user.gid if group is None else group
-            home = user.home
-
-            return UserGroup(uid=uid, gid=gid, home=home)
+            return UserInfo(
+                uid=info.uid,
+                gid=info.gid if gid is None else gid,
+                home=info.home,
+            )
         else:
             raise RuntimeError(f"Invalid user '{self.user}'")
 
