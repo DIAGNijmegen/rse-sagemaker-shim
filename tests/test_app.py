@@ -73,7 +73,7 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
         "GRAND_CHALLENGE_COMPONENT_OUTPUT_PATH",
         str(output_path),
     )
-    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_KEEP_EXTRA_GROUPS", "True")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
 
     debug_log = deepcopy(LOGGING_CONFIG)
     debug_log["root"]["level"] = "DEBUG"

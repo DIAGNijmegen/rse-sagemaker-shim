@@ -161,6 +161,59 @@ class UserInfo(NamedTuple):
     extra_groups: list[int]
 
 
+def _get_user_info(id_or_name: str) -> UserInfo:
+    if id_or_name == "":
+        return UserInfo(uid=None, gid=None, home=None, extra_groups=[])
+
+    try:
+        user = pwd.getpwnam(id_or_name)
+    except (KeyError, AttributeError):
+        try:
+            uid = int(id_or_name)
+        except ValueError as error:
+            raise RuntimeError(f"User '{id_or_name}' not found") from error
+
+        try:
+            user = pwd.getpwuid(uid)
+        except (KeyError, AttributeError):
+            return UserInfo(uid=uid, gid=None, home=None, extra_groups=[])
+
+    return UserInfo(
+        uid=user.pw_uid,
+        gid=user.pw_gid,
+        home=user.pw_dir,
+        extra_groups=_get_users_groups(user=user),
+    )
+
+
+def _get_users_groups(*, user: pwd.struct_passwd) -> list[int]:
+    users_groups = {
+        g.gr_gid for g in grp.getgrall() if user.pw_name in g.gr_mem
+    }
+
+    # pw_gid as the first group
+    try:
+        users_groups.remove(user.pw_gid)
+    except KeyError:
+        pass
+
+    return [user.pw_gid, *sorted(users_groups)]
+
+
+def _get_group_id(id_or_name: str) -> int | None:
+    if id_or_name == "":
+        return None
+
+    try:
+        group = grp.getgrnam(id_or_name)
+        return group.gr_gid
+    except (KeyError, AttributeError):
+        try:
+            return int(id_or_name)
+        except ValueError as error:
+            raise RuntimeError(f"Group '{id_or_name}' not found") from error
+
+
 class InferenceTask(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -239,13 +292,13 @@ class InferenceTask(BaseModel):
     def extra_groups(self) -> list[int] | None:
         if (
             os.environ.get(
-                "GRAND_CHALLENGE_COMPONENT_KEEP_EXTRA_GROUPS", "False"
+                "GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "True"
             ).lower()
             == "true"
         ):
-            return None
-        else:
             return self.proc_user.extra_groups
+        else:
+            return None
 
     @cached_property
     def _s3_client(self) -> S3Client:
@@ -301,59 +354,6 @@ class InferenceTask(BaseModel):
 
         return env
 
-    @staticmethod
-    def _get_user_info(id_or_name: str) -> UserInfo:
-        if id_or_name == "":
-            return UserInfo(uid=None, gid=None, home=None, extra_groups=[])
-
-        try:
-            user = pwd.getpwnam(id_or_name)
-        except (KeyError, AttributeError):
-            try:
-                uid = int(id_or_name)
-            except ValueError as error:
-                raise RuntimeError(f"User '{id_or_name}' not found") from error
-
-            try:
-                user = pwd.getpwuid(uid)
-            except (KeyError, AttributeError):
-                return UserInfo(uid=uid, gid=None, home=None, extra_groups=[])
-
-        users_groups = {
-            g.gr_gid for g in grp.getgrall() if user.pw_name in g.gr_mem
-        }
-
-        # pw_gid as the first group
-        try:
-            users_groups.remove(user.pw_gid)
-        except KeyError:
-            pass
-
-        extra_groups = [user.pw_gid, *sorted(users_groups)]
-
-        return UserInfo(
-            uid=user.pw_uid,
-            gid=user.pw_gid,
-            home=user.pw_dir,
-            extra_groups=extra_groups,
-        )
-
-    @staticmethod
-    def _get_group_id(id_or_name: str) -> int | None:
-        if id_or_name == "":
-            return None
-
-        try:
-            group = grp.getgrnam(id_or_name)
-            return group.gr_gid
-        except (KeyError, AttributeError):
-            try:
-                return int(id_or_name)
-            except ValueError as error:
-                raise RuntimeError(
-                    f"Group '{id_or_name}' not found"
-                ) from error
-
     @cached_property
     def proc_user(self) -> UserInfo:
         if self.user == "":
@@ -364,8 +364,8 @@ class InferenceTask(BaseModel):
         )
 
         if match:
-            info = self._get_user_info(id_or_name=match.group("user"))
-            gid = self._get_group_id(id_or_name=match.group("group"))
+            info = _get_user_info(id_or_name=match.group("user"))
+            gid = _get_group_id(id_or_name=match.group("group"))
 
             return UserInfo(
                 uid=info.uid,
