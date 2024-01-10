@@ -108,14 +108,14 @@ USER_GROUPS = _get_users_groups(user=pwd.getpwnam(getpass.getuser()))
             os.getuid(),
             23746,
             USER_HOME,
-            [23746, *USER_GROUPS],
+            _put_gid_first(gid=23746, groups=USER_GROUPS),
         ),
         (
             f"{getpass.getuser()}:23746",
             os.getuid(),
             23746,
             USER_HOME,
-            [23746, *USER_GROUPS],
+            _put_gid_first(gid=23746, groups=USER_GROUPS),
         ),
         # User does not exist, but is an int
         ("23746", 23746, None, None, []),
@@ -145,6 +145,15 @@ def test_proc_user(
     assert t.proc_user.home == expected_home
     assert t.extra_groups == expected_extra_groups
     assert None not in t.extra_groups
+
+
+def test_put_gid_first():
+    # Setting None leaves the groups unmodified
+    assert _put_gid_first(gid=None, groups=[2, 1, 3, 4]) == [2, 1, 3, 4]
+    # Setting an existing group puts it first and orders the rest
+    assert _put_gid_first(gid=3, groups=[2, 1, 3, 4]) == [3, 1, 2, 4]
+    # Adding a group puts it first and orders the rest
+    assert _put_gid_first(gid=5, groups=[2, 1, 3, 4]) == [5, 1, 2, 3, 4]
 
 
 # Should error

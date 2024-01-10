@@ -194,11 +194,11 @@ def _get_users_groups(*, user: pwd.struct_passwd) -> list[int]:
 
 
 def _put_gid_first(*, gid: int | None, groups: list[int]) -> list[int]:
-    user_groups = set(groups)
-
     if gid is None:
-        return sorted(user_groups)
+        return groups
     else:
+        user_groups = set(groups)
+
         try:
             user_groups.remove(gid)
         except KeyError:
