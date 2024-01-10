@@ -64,6 +64,8 @@ def test_removing_ld_library_path(monkeypatch):
 
 ROOT_HOME = pwd.getpwnam("root").pw_dir
 ROOT_GROUPS = sorted({g.gr_gid for g in grp.getgrall() if "root" in g.gr_mem})
+if pwd.getpwnam("root").pw_gid not in ROOT_GROUPS:
+    ROOT_GROUPS = [pwd.getpwnam("root").pw_gid, *sorted(ROOT_GROUPS)]
 USER_HOME = os.path.expanduser("~")
 USER_GROUPS = {
     g.gr_gid for g in grp.getgrall() if getpass.getuser() in g.gr_mem
