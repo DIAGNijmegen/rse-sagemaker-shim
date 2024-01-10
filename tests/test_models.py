@@ -5,7 +5,12 @@ import pwd
 
 import pytest
 
-from sagemaker_shim.models import InferenceTask, validate_bucket_name
+from sagemaker_shim.models import (
+    InferenceTask,
+    _get_users_groups,
+    _put_gid_first,
+    validate_bucket_name,
+)
 
 
 def test_invalid_bucket_name():
@@ -63,14 +68,9 @@ def test_removing_ld_library_path(monkeypatch):
 
 
 ROOT_HOME = pwd.getpwnam("root").pw_dir
-ROOT_GROUPS = sorted({g.gr_gid for g in grp.getgrall() if "root" in g.gr_mem})
-if pwd.getpwnam("root").pw_gid not in ROOT_GROUPS:
-    ROOT_GROUPS = [pwd.getpwnam("root").pw_gid, *sorted(ROOT_GROUPS)]
+ROOT_GROUPS = _get_users_groups(user=pwd.getpwnam("root"))
 USER_HOME = os.path.expanduser("~")
-USER_GROUPS = {
-    g.gr_gid for g in grp.getgrall() if getpass.getuser() in g.gr_mem
-}
-USER_GROUPS = [pwd.getpwnam(getpass.getuser()).pw_gid, *sorted(USER_GROUPS)]
+USER_GROUPS = _get_users_groups(user=pwd.getpwnam(getpass.getuser()))
 
 
 @pytest.mark.parametrize(
@@ -78,15 +78,21 @@ USER_GROUPS = [pwd.getpwnam(getpass.getuser()).pw_gid, *sorted(USER_GROUPS)]
     (
         ("0", 0, 0, ROOT_HOME, ROOT_GROUPS),
         ("0:0", 0, 0, ROOT_HOME, ROOT_GROUPS),
-        (":0", None, 0, None, []),
+        (":0", None, 0, None, [0]),
         ("", None, None, None, []),
         ("root", 0, 0, ROOT_HOME, ROOT_GROUPS),
         (f"root:{grp.getgrgid(0).gr_name}", 0, 0, ROOT_HOME, ROOT_GROUPS),
-        (f":{grp.getgrgid(0).gr_name}", None, 0, None, []),
+        (f":{grp.getgrgid(0).gr_name}", None, 0, None, [0]),
         ("root:0", 0, 0, ROOT_HOME, ROOT_GROUPS),
         (f"0:{grp.getgrgid(0).gr_name}", 0, 0, ROOT_HOME, ROOT_GROUPS),
-        (f":{os.getgid()}", None, os.getgid(), None, []),
-        (f"root:{os.getgid()}", 0, os.getgid(), ROOT_HOME, ROOT_GROUPS),
+        (f":{os.getgid()}", None, os.getgid(), None, [os.getgid()]),
+        (
+            f"root:{os.getgid()}",
+            0,
+            os.getgid(),
+            ROOT_HOME,
+            _put_gid_first(gid=os.getgid(), groups=ROOT_GROUPS),
+        ),
         # User exists
         (f"{os.getuid()}", os.getuid(), os.getgid(), USER_HOME, USER_GROUPS),
         (
@@ -97,20 +103,26 @@ USER_GROUPS = [pwd.getpwnam(getpass.getuser()).pw_gid, *sorted(USER_GROUPS)]
             USER_GROUPS,
         ),
         # Group does not exist, but is an int
-        (f"{os.getuid()}:23746", os.getuid(), 23746, USER_HOME, USER_GROUPS),
+        (
+            f"{os.getuid()}:23746",
+            os.getuid(),
+            23746,
+            USER_HOME,
+            [23746, *USER_GROUPS],
+        ),
         (
             f"{getpass.getuser()}:23746",
             os.getuid(),
             23746,
             USER_HOME,
-            USER_GROUPS,
+            [23746, *USER_GROUPS],
         ),
         # User does not exist, but is an int
         ("23746", 23746, None, None, []),
-        (f"23746:{grp.getgrgid(0).gr_name}", 23746, 0, None, []),
-        (f"23746:{os.getgid()}", 23746, os.getgid(), None, []),
+        (f"23746:{grp.getgrgid(0).gr_name}", 23746, 0, None, [0]),
+        (f"23746:{os.getgid()}", 23746, os.getgid(), None, [os.getgid()]),
         # User and group do not exist, but are ints
-        ("23746:23746", 23746, 23746, None, []),
+        ("23746:23746", 23746, 23746, None, [23746]),
     ),
 )
 def test_proc_user(
@@ -132,6 +144,7 @@ def test_proc_user(
     assert t.proc_user.gid == expected_group
     assert t.proc_user.home == expected_home
     assert t.extra_groups == expected_extra_groups
+    assert None not in t.extra_groups
 
 
 # Should error

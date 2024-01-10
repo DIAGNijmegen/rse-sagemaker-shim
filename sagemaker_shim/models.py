@@ -187,17 +187,24 @@ def _get_user_info(id_or_name: str) -> UserInfo:
 
 
 def _get_users_groups(*, user: pwd.struct_passwd) -> list[int]:
-    users_groups = {
+    users_groups = [
         g.gr_gid for g in grp.getgrall() if user.pw_name in g.gr_mem
-    }
+    ]
+    return _put_gid_first(gid=user.pw_gid, groups=users_groups)
 
-    # pw_gid as the first group
-    try:
-        users_groups.remove(user.pw_gid)
-    except KeyError:
-        pass
 
-    return [user.pw_gid, *sorted(users_groups)]
+def _put_gid_first(*, gid: int | None, groups: list[int]) -> list[int]:
+    user_groups = set(groups)
+
+    if gid is None:
+        return sorted(user_groups)
+    else:
+        try:
+            user_groups.remove(gid)
+        except KeyError:
+            pass
+
+        return [gid, *sorted(user_groups)]
 
 
 def _get_group_id(id_or_name: str) -> int | None:
@@ -205,8 +212,7 @@ def _get_group_id(id_or_name: str) -> int | None:
         return None
 
     try:
-        group = grp.getgrnam(id_or_name)
-        return group.gr_gid
+        return grp.getgrnam(id_or_name).gr_gid
     except (KeyError, AttributeError):
         try:
             return int(id_or_name)
@@ -365,13 +371,15 @@ class InferenceTask(BaseModel):
 
         if match:
             info = _get_user_info(id_or_name=match.group("user"))
-            gid = _get_group_id(id_or_name=match.group("group"))
+            group_id = _get_group_id(id_or_name=match.group("group"))
+
+            gid = info.gid if group_id is None else group_id
 
             return UserInfo(
                 uid=info.uid,
-                gid=info.gid if gid is None else gid,
+                gid=gid,
                 home=info.home,
-                groups=info.groups,
+                groups=_put_gid_first(gid=gid, groups=info.groups),
             )
         else:
             raise RuntimeError(f"Invalid user '{self.user}'")
