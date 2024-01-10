@@ -1,3 +1,4 @@
+import getpass
 import grp
 import os
 import pwd
@@ -79,7 +80,7 @@ def test_removing_ld_library_path(monkeypatch):
         # User exists
         (f"{os.getuid()}", os.getuid(), os.getgid(), os.path.expanduser("~")),
         (
-            f"{os.getlogin()}",
+            f"{getpass.getuser()}",
             os.getuid(),
             os.getgid(),
             os.path.expanduser("~"),
@@ -87,7 +88,7 @@ def test_removing_ld_library_path(monkeypatch):
         # Group does not exist, but is an int
         (f"{os.getuid()}:23746", os.getuid(), 23746, os.path.expanduser("~")),
         (
-            f"{os.getlogin()}:23746",
+            f"{getpass.getuser()}:23746",
             os.getuid(),
             23746,
             os.path.expanduser("~"),
