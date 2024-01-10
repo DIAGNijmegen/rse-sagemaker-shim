@@ -62,46 +62,62 @@ def test_removing_ld_library_path(monkeypatch):
     assert env["LD_LIBRARY_PATH"] == "present"
 
 
+ROOT_HOME = pwd.getpwnam("root").pw_dir
+ROOT_GROUPS = sorted({g.gr_gid for g in grp.getgrall() if "root" in g.gr_mem})
+USER_HOME = os.path.expanduser("~")
+USER_GROUPS = {
+    g.gr_gid for g in grp.getgrall() if getpass.getuser() in g.gr_mem
+}
+USER_GROUPS = [pwd.getpwnam(getpass.getuser()).pw_gid, *sorted(USER_GROUPS)]
+
+
 @pytest.mark.parametrize(
-    "user,expected_user,expected_group,expected_home",
+    "user,expected_user,expected_group,expected_home,expected_extra_groups",
     (
-        ("0", 0, 0, pwd.getpwnam("root").pw_dir),
-        ("0:0", 0, 0, pwd.getpwnam("root").pw_dir),
-        (":0", None, 0, None),
-        ("", None, None, None),
-        ("root", 0, 0, pwd.getpwnam("root").pw_dir),
-        (f"root:{grp.getgrgid(0).gr_name}", 0, 0, pwd.getpwnam("root").pw_dir),
-        (f":{grp.getgrgid(0).gr_name}", None, 0, None),
-        ("root:0", 0, 0, pwd.getpwnam("root").pw_dir),
-        (f"0:{grp.getgrgid(0).gr_name}", 0, 0, pwd.getpwnam("root").pw_dir),
-        (f":{os.getgid()}", None, os.getgid(), None),
-        (f"root:{os.getgid()}", 0, os.getgid(), pwd.getpwnam("root").pw_dir),
+        ("0", 0, 0, ROOT_HOME, ROOT_GROUPS),
+        ("0:0", 0, 0, ROOT_HOME, ROOT_GROUPS),
+        (":0", None, 0, None, []),
+        ("", None, None, None, []),
+        ("root", 0, 0, ROOT_HOME, ROOT_GROUPS),
+        (f"root:{grp.getgrgid(0).gr_name}", 0, 0, ROOT_HOME, ROOT_GROUPS),
+        (f":{grp.getgrgid(0).gr_name}", None, 0, None, []),
+        ("root:0", 0, 0, ROOT_HOME, ROOT_GROUPS),
+        (f"0:{grp.getgrgid(0).gr_name}", 0, 0, ROOT_HOME, ROOT_GROUPS),
+        (f":{os.getgid()}", None, os.getgid(), None, []),
+        (f"root:{os.getgid()}", 0, os.getgid(), ROOT_HOME, ROOT_GROUPS),
         # User exists
-        (f"{os.getuid()}", os.getuid(), os.getgid(), os.path.expanduser("~")),
+        (f"{os.getuid()}", os.getuid(), os.getgid(), USER_HOME, USER_GROUPS),
         (
             f"{getpass.getuser()}",
             os.getuid(),
             os.getgid(),
-            os.path.expanduser("~"),
+            USER_HOME,
+            USER_GROUPS,
         ),
         # Group does not exist, but is an int
-        (f"{os.getuid()}:23746", os.getuid(), 23746, os.path.expanduser("~")),
+        (f"{os.getuid()}:23746", os.getuid(), 23746, USER_HOME, USER_GROUPS),
         (
             f"{getpass.getuser()}:23746",
             os.getuid(),
             23746,
-            os.path.expanduser("~"),
+            USER_HOME,
+            USER_GROUPS,
         ),
         # User does not exist, but is an int
-        ("23746", 23746, None, None),
-        (f"23746:{grp.getgrgid(0).gr_name}", 23746, 0, None),
-        (f"23746:{os.getgid()}", 23746, os.getgid(), None),
+        ("23746", 23746, None, None, []),
+        (f"23746:{grp.getgrgid(0).gr_name}", 23746, 0, None, []),
+        (f"23746:{os.getgid()}", 23746, os.getgid(), None, []),
         # User and group do not exist, but are ints
-        ("23746:23746", 23746, 23746, None),
+        ("23746:23746", 23746, 23746, None, []),
     ),
 )
 def test_proc_user(
-    monkeypatch, user, expected_user, expected_group, expected_home
+    monkeypatch,
+    user,
+    expected_user,
+    expected_group,
+    expected_home,
+    expected_extra_groups,
 ):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", user)
 
@@ -113,6 +129,7 @@ def test_proc_user(
     assert t.proc_user.uid == expected_user
     assert t.proc_user.gid == expected_group
     assert t.proc_user.home == expected_home
+    assert t.extra_groups == expected_extra_groups
 
 
 # Should error

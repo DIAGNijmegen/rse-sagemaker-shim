@@ -158,6 +158,7 @@ class UserInfo(NamedTuple):
     uid: int | None
     gid: int | None
     home: str | None
+    extra_groups: list[int]
 
 
 class InferenceTask(BaseModel):
@@ -244,7 +245,7 @@ class InferenceTask(BaseModel):
         ):
             return None
         else:
-            return []
+            return self.proc_user.extra_groups
 
     @cached_property
     def _s3_client(self) -> S3Client:
@@ -303,7 +304,7 @@ class InferenceTask(BaseModel):
     @staticmethod
     def _get_user_info(id_or_name: str) -> UserInfo:
         if id_or_name == "":
-            return UserInfo(uid=None, gid=None, home=None)
+            return UserInfo(uid=None, gid=None, home=None, extra_groups=[])
 
         try:
             user = pwd.getpwnam(id_or_name)
@@ -316,9 +317,26 @@ class InferenceTask(BaseModel):
             try:
                 user = pwd.getpwuid(uid)
             except (KeyError, AttributeError):
-                return UserInfo(uid=uid, gid=None, home=None)
+                return UserInfo(uid=uid, gid=None, home=None, extra_groups=[])
 
-        return UserInfo(uid=user.pw_uid, gid=user.pw_gid, home=user.pw_dir)
+        users_groups = {
+            g.gr_gid for g in grp.getgrall() if user.pw_name in g.gr_mem
+        }
+
+        # pw_gid as the first group
+        try:
+            users_groups.remove(user.pw_gid)
+        except KeyError:
+            pass
+
+        extra_groups = [user.pw_gid, *sorted(users_groups)]
+
+        return UserInfo(
+            uid=user.pw_uid,
+            gid=user.pw_gid,
+            home=user.pw_dir,
+            extra_groups=extra_groups,
+        )
 
     @staticmethod
     def _get_group_id(id_or_name: str) -> int | None:
@@ -339,7 +357,7 @@ class InferenceTask(BaseModel):
     @cached_property
     def proc_user(self) -> UserInfo:
         if self.user == "":
-            return UserInfo(uid=None, gid=None, home=None)
+            return UserInfo(uid=None, gid=None, home=None, extra_groups=[])
 
         match = re.fullmatch(
             r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self.user
@@ -353,6 +371,7 @@ class InferenceTask(BaseModel):
                 uid=info.uid,
                 gid=info.gid if gid is None else gid,
                 home=info.home,
+                extra_groups=info.extra_groups,
             )
         else:
             raise RuntimeError(f"Invalid user '{self.user}'")
