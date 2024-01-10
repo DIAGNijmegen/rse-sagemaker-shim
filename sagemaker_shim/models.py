@@ -328,6 +328,9 @@ class InferenceTask(BaseModel):
 
     @cached_property
     def proc_user(self) -> UserGroup:
+        if self.user == "":
+            return UserGroup(uid=None, gid=None, home=None)
+
         match = re.fullmatch(
             r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self.user
         )
@@ -342,7 +345,7 @@ class InferenceTask(BaseModel):
 
             return UserGroup(uid=uid, gid=gid, home=home)
         else:
-            return UserGroup(uid=None, gid=None, home=None)
+            raise RuntimeError(f"Invalid user '{self.user}'")
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""

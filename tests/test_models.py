@@ -72,7 +72,6 @@ def test_removing_ld_library_path(monkeypatch):
         ("root", 0, 0, pwd.getpwnam("root").pw_dir),
         (f"root:{grp.getgrgid(0).gr_name}", 0, 0, pwd.getpwnam("root").pw_dir),
         (f":{grp.getgrgid(0).gr_name}", None, 0, None),
-        ("🙈:🙉", None, None, None),
         ("root:0", 0, 0, pwd.getpwnam("root").pw_dir),
         (f"0:{grp.getgrgid(0).gr_name}", 0, 0, pwd.getpwnam("root").pw_dir),
         (f":{os.getgid()}", None, os.getgid(), None),
@@ -125,7 +124,7 @@ def test_proc_user(
             "Group 'nonExistantGroup' not found",
         ),
         (
-            f"{os.getlogin()}:nonExistantGroup",
+            f"{getpass.getuser()}:nonExistantGroup",
             "Group 'nonExistantGroup' not found",
         ),
         ("nonExistantUser", "User 'nonExistantUser' not found"),
@@ -139,6 +138,9 @@ def test_proc_user(
             "User 'nonExistantUser' not found",
         ),
         (f"nonExistantUser:{os.getgid()}", "User 'nonExistantUser' not found"),
+        ("🙈:🙉", "Invalid user '🙈:🙉'"),
+        ("🙈", "Invalid user '🙈'"),
+        (":🙉", "Invalid user ':🙉'"),
     ),
 )
 def test_proc_user_errors(monkeypatch, user, expected_error):
