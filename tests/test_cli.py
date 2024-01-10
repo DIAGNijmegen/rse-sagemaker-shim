@@ -100,6 +100,7 @@ def test_inference_from_task_list(
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
         encode_b64j(val=cmd),
     )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
 
     runner = CliRunner()
     runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
@@ -142,6 +143,7 @@ def test_inference_from_s3_uri(minio, monkeypatch, cmd, expected_return_code):
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
         encode_b64j(val=cmd),
     )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
 
     definition_key = f"{uuid4()}/invocations.json"
 
@@ -183,6 +185,7 @@ def test_logging_setup(minio, monkeypatch):
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
         encode_b64j(val=["echo", "hello"]),
     )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
 
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
@@ -210,6 +213,7 @@ def test_logging_stderr_setup(minio, monkeypatch):
             val=["bash", "-c", "echo 'hello' >> /dev/stderr && exit 1"]
         ),
     )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
 
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])

@@ -312,6 +312,7 @@ async def test_inference_result_upload(
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
         encode_b64j(val=cmd),
     )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
 
     direct_invocation = await task.invoke()
 
