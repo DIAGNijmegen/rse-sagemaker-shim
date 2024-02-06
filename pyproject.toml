@@ -23,8 +23,8 @@ click = "*"
 boto3 = "*"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "*"
-docker = "*"
+pytest = "!=8.0.0"  # pytest 8 is not yet supported by pytest-asyncio
+docker = "!=7.0.0"  # docker 7 breaks building with localhost:port/repo:tag syntax
 httpx = "*"
 pytest-randomly = "*"
 pytest-xdist = "*"
