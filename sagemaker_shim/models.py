@@ -13,7 +13,8 @@ from base64 import b64decode
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
-from tempfile import TemporaryDirectory, SpooledTemporaryFile
+from tempfile import SpooledTemporaryFile, TemporaryDirectory
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
@@ -44,11 +45,13 @@ def get_s3_client() -> S3Client:
         "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
     )
 
+
 class S3File(NamedTuple):
     bucket: str
     key: str
 
-def parse_s3_uri(*, s3_uri) -> S3File:
+
+def parse_s3_uri(*, s3_uri: str) -> S3File:
     pattern = r"^(https|s3)://(?P<bucket>[^/]+)/?(?P<key>.*)$"
     match = re.fullmatch(pattern, s3_uri)
 
@@ -56,6 +59,7 @@ def parse_s3_uri(*, s3_uri) -> S3File:
         raise ValueError(f"Not a valid S3 uri, must match pattern {pattern}")
 
     return S3File(bucket=match.group("bucket"), key=match.group("key"))
+
 
 def get_s3_file_content(*, s3_uri: str) -> bytes:
     s3_file = parse_s3_uri(s3_uri=s3_uri)
@@ -71,6 +75,7 @@ def get_s3_file_content(*, s3_uri: str) -> bytes:
     content.seek(0)
 
     return content.read()
+
 
 def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
     s3_file = parse_s3_uri(s3_uri=s3_uri)
@@ -128,30 +133,44 @@ class DependentData(BaseModel):
 
     @property
     def post_clean_directories(self) -> list[Path]:
-        return [Path(p) for p in os.environ.get("GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES", "").split(":") if p]
+        return [
+            Path(p)
+            for p in os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES", ""
+            ).split(":")
+            if p
+        ]
 
-    def __enter__(self):
+    def __enter__(self) -> None:
         logger.info("Entering DependentData")
 
         self.download_model()
         self.download_ground_truth()
 
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         logger.info("Exiting DependentData")
 
         for p in self.post_clean_directories:
             clean_path(p)
 
-    def download_model(self):
+    def download_model(self) -> None:
         if self.model_source is not None:
             self.model_dest.mkdir(parents=True, exist_ok=True)
-            download_and_extract_tarball(s3_uri=self.model_source, dest=self.model_dest)
+            download_and_extract_tarball(
+                s3_uri=self.model_source, dest=self.model_dest
+            )
 
-    def download_ground_truth(self):
+    def download_ground_truth(self) -> None:
         if self.ground_truth_source is not None:
             self.ground_truth_dest.mkdir(parents=True, exist_ok=True)
-            download_and_extract_tarball(s3_uri=self.ground_truth_source, dest=self.ground_truth_dest)
+            download_and_extract_tarball(
+                s3_uri=self.ground_truth_source, dest=self.ground_truth_dest
+            )
 
 
 class InferenceIO(BaseModel):
@@ -514,8 +533,6 @@ class InferenceTask(BaseModel):
         """Clean all contents of input and output folders"""
         clean_path(path=self.input_path)
         clean_path(path=self.output_path)
-
-
 
     def download_input(self) -> None:
         """Download all the inputs to the input path"""

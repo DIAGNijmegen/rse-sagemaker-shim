@@ -13,7 +13,8 @@ from sagemaker_shim.models import (
     InferenceIO,
     InferenceResult,
     InferenceTask,
-    get_s3_client, clean_path,
+    clean_path,
+    get_s3_client,
 )
 from tests.utils import encode_b64j
 
