@@ -94,7 +94,7 @@ def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
 
         f.seek(0)
 
-        with tarfile.open(fileobj=f, mode="r:gz") as tar:
+        with tarfile.open(fileobj=f, mode="r") as tar:
             tar.extractall(path=dest, filter="data")
 
 
