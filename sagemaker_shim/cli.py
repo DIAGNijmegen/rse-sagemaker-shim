@@ -1,11 +1,9 @@
 import asyncio
 import logging.config
-import os
 import sys
 from collections.abc import Callable, Coroutine
 from functools import wraps
 from json import JSONDecodeError
-from pathlib import Path
 from typing import Any, TypeVar
 
 import click
@@ -15,7 +13,11 @@ from pydantic import ValidationError
 
 from sagemaker_shim.app import app
 from sagemaker_shim.logging import LOGGING_CONFIG
-from sagemaker_shim.models import InferenceTaskList, get_s3_file_content
+from sagemaker_shim.models import (
+    DependentData,
+    InferenceTaskList,
+    get_s3_file_content,
+)
 
 T = TypeVar("T")
 
@@ -30,29 +32,17 @@ def async_to_sync(
     return wrapper
 
 
-def _get_writable_directories() -> list[str]:
-    directories_str = os.environ.get(
-        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", ""
-    )
-    return [d for d in directories_str.split(":") if d != ""]
-
-
-def _ensure_directories_are_writable() -> None:
-    for directory in _get_writable_directories():
-        path = Path(directory)
-        path.mkdir(exist_ok=True, parents=True)
-        path.chmod(mode=0o777)
-
-
 @click.group()
 def cli() -> None:
     logging.config.dictConfig(LOGGING_CONFIG)
-    _ensure_directories_are_writable()
 
 
 @cli.command(short_help="Start the model server")
 def serve() -> None:
-    uvicorn.run(app=app, host="0.0.0.0", port=8080, log_config=None, workers=1)
+    with DependentData():
+        uvicorn.run(
+            app=app, host="0.0.0.0", port=8080, log_config=None, workers=1
+        )
 
 
 @cli.command(short_help="Invoke the model")
@@ -95,12 +85,13 @@ async def invoke(tasks: str, file: str) -> None:
             f"The tasks definition is invalid:\n\n{error}"
         ) from error
 
-    if not parsed_tasks.root:
+    if parsed_tasks.root:
+        with DependentData():
+            for task in parsed_tasks.root:
+                # Only run one task at a time
+                await task.invoke()
+    else:
         raise click.UsageError("Empty task list provided")
-
-    for task in parsed_tasks.root:
-        # Only run one task at a time
-        await task.invoke()
 
 
 if __name__ == "__main__":

@@ -1,14 +1,20 @@
 import getpass
 import grp
+import io
 import os
 import pwd
+import tarfile
+from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
 from sagemaker_shim.models import (
+    DependentData,
     InferenceTask,
     _get_users_groups,
     _put_gid_first,
+    get_s3_client,
     validate_bucket_name,
 )
 
@@ -218,3 +224,149 @@ def test_home_is_set(monkeypatch):
     )
 
     assert t.proc_env["HOME"] == pwd.getpwnam("root").pw_dir
+
+
+def test_model_and_ground_truth_extraction(minio, monkeypatch, tmp_path):
+    s3_client = get_s3_client()
+
+    model_pk = str(uuid4())
+
+    model_f = io.BytesIO()
+    with tarfile.open(fileobj=model_f, mode="w:gz") as tar:
+        content = b"Hello, World!"
+        file_info = tarfile.TarInfo("model-file1.txt")
+        file_info.size = len(content)
+        tar.addfile(file_info, io.BytesIO(content))
+
+        file_info = tarfile.TarInfo("model-sub/model-file2.txt")
+        file_info.size = len(content)
+        tar.addfile(file_info, io.BytesIO(content))
+
+    model_f.seek(0)
+
+    s3_client.upload_fileobj(
+        model_f, minio.input_bucket_name, f"{model_pk}/model.tar.gz"
+    )
+
+    ground_truth_pk = str(uuid4())
+
+    ground_truth_f = io.BytesIO()
+    with tarfile.open(fileobj=ground_truth_f, mode="w:gz") as tar:
+        content = b"Hello, World!"
+        file_info = tarfile.TarInfo("gt-file1.txt")
+        file_info.size = len(content)
+        tar.addfile(file_info, io.BytesIO(content))
+
+        file_info = tarfile.TarInfo("gt-sub/gt-file2.txt")
+        file_info.size = len(content)
+        tar.addfile(file_info, io.BytesIO(content))
+
+    ground_truth_f.seek(0)
+
+    s3_client.upload_fileobj(
+        ground_truth_f,
+        minio.input_bucket_name,
+        f"{ground_truth_pk}/ground_truth.tar.gz",
+    )
+
+    model_destination = tmp_path / "model"
+    ground_truth_destination = tmp_path / "ground_truth"
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_MODEL",
+        f"s3://{minio.input_bucket_name}/{model_pk}/model.tar.gz",
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_MODEL_DEST", str(model_destination)
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH",
+        f"s3://{minio.input_bucket_name}/{ground_truth_pk}/ground_truth.tar.gz",
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH_DEST",
+        str(ground_truth_destination),
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES",
+        f"{model_destination}:{ground_truth_destination}",
+    )
+
+    with DependentData():
+        downloaded_files = {
+            str(f.relative_to(tmp_path))
+            for f in tmp_path.rglob("**/*")
+            if f.is_file()
+        }
+
+    assert downloaded_files == {
+        "model/model-file1.txt",
+        "model/model-sub/model-file2.txt",
+        "ground_truth/gt-file1.txt",
+        "ground_truth/gt-sub/gt-file2.txt",
+    }
+
+    # Files should be cleaned up
+    assert {str(f.relative_to(tmp_path)) for f in tmp_path.rglob("**/*")} == {
+        "model",
+        "ground_truth",
+    }
+
+
+def test_ensure_directories_are_writable_unset():
+    with DependentData() as d:
+        assert d.writable_directories == []
+        assert d.post_clean_directories == []
+        assert d.model_source is None
+        assert d.model_dest == Path("/opt/ml/model")
+        assert not d.model_dest.exists()
+        assert d.ground_truth_source is None
+        assert d.ground_truth_dest == Path("/opt/ml/input/data/ground_truth")
+        assert not d.ground_truth_dest.exists()
+
+
+@pytest.mark.parametrize(
+    "directories,expected",
+    (
+        ("", []),
+        (":", []),
+        ("::", []),
+    ),
+)
+def test_ensure_directories_are_writable_set(
+    monkeypatch, directories, expected
+):
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES",
+        directories,
+    )
+
+    d = DependentData()
+    assert d.writable_directories == expected
+
+
+def test_ensure_directories_are_writable(tmp_path, monkeypatch):
+    data = tmp_path / "opt" / "ml" / "output" / "data"
+    data.mkdir(mode=0o755, parents=True)
+
+    model = tmp_path / "opt" / "ml" / "model"
+    model.mkdir(mode=0o755, parents=True)
+
+    # Do not create the checkpoints dir in the test
+    checkpoints = tmp_path / "opt" / "ml" / "checkpoints"
+
+    tmp = tmp_path / "tmp"
+    tmp.mkdir(mode=0o755)
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES",
+        f"{data.absolute()}:{model.absolute()}:{checkpoints.absolute()}:{tmp.absolute()}",
+    )
+
+    with DependentData():
+        pass
+
+    assert data.stat().st_mode == 0o40777
+    assert model.stat().st_mode == 0o40777
+    assert checkpoints.stat().st_mode == 0o40777
+    assert tmp.stat().st_mode == 0o40777

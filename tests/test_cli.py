@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from click.testing import CliRunner
 
-from sagemaker_shim.cli import _get_writable_directories, cli
+from sagemaker_shim.cli import cli
 from sagemaker_shim.models import get_s3_client, get_s3_file_content
 from tests.utils import encode_b64j
 
@@ -194,6 +194,8 @@ def test_logging_setup(minio, monkeypatch):
         '{"log": "hello", "level": "INFO", '
         f'"source": "stdout", "internal": false, "task": "{pk}"}}'
     ) in result.output
+    assert "Setting up Dependent Data" in result.output
+    assert "Cleaning up Dependent Data" in result.output
 
 
 def test_logging_stderr_setup(minio, monkeypatch):
@@ -222,55 +224,3 @@ def test_logging_stderr_setup(minio, monkeypatch):
         '{"log": "hello", "level": "WARNING", '
         f'"source": "stderr", "internal": false, "task": "{pk}"}}'
     ) in result.output
-
-
-def test_ensure_directories_are_writable(tmp_path, monkeypatch):
-    data = tmp_path / "opt" / "ml" / "output" / "data"
-    data.mkdir(mode=0o755, parents=True)
-
-    model = tmp_path / "opt" / "ml" / "model"
-    model.mkdir(mode=0o755, parents=True)
-
-    # Do not create the checkpoints dir in the test
-    checkpoints = tmp_path / "opt" / "ml" / "checkpoints"
-
-    tmp = tmp_path / "tmp"
-    tmp.mkdir(mode=0o755)
-
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES",
-        f"{data.absolute()}:{model.absolute()}:{checkpoints.absolute()}:{tmp.absolute()}",
-    )
-
-    runner = CliRunner()
-    runner.invoke(cli, ["invoke"])
-
-    assert data.stat().st_mode == 0o40777
-    assert model.stat().st_mode == 0o40777
-    assert checkpoints.stat().st_mode == 0o40777
-    assert tmp.stat().st_mode == 0o40777
-
-
-def test_ensure_directories_are_writable_unset():
-    assert _get_writable_directories() == []
-
-
-@pytest.mark.parametrize(
-    "directories,expected",
-    (
-        ("", []),
-        ("/tmp", ["/tmp"]),
-        ("/tmp:/foo/bar", ["/tmp", "/foo/bar"]),
-        ("/tmp::", ["/tmp"]),
-        (":", []),
-        ("::", []),
-    ),
-)
-def test_ensure_directories_are_writable_set(
-    monkeypatch, directories, expected
-):
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES",
-        directories,
-    )
-    assert _get_writable_directories() == expected

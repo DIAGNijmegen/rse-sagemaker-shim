@@ -8,11 +8,13 @@ import os
 import pwd
 import re
 import subprocess
+import tarfile
 from base64 import b64decode
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import SpooledTemporaryFile, TemporaryDirectory
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
@@ -44,24 +46,52 @@ def get_s3_client() -> S3Client:
     )
 
 
-def get_s3_file_content(*, s3_uri: str) -> bytes:
+class S3File(NamedTuple):
+    bucket: str
+    key: str
+
+
+def parse_s3_uri(*, s3_uri: str) -> S3File:
     pattern = r"^(https|s3)://(?P<bucket>[^/]+)/?(?P<key>.*)$"
     match = re.fullmatch(pattern, s3_uri)
 
     if not match:
         raise ValueError(f"Not a valid S3 uri, must match pattern {pattern}")
 
+    return S3File(bucket=match.group("bucket"), key=match.group("key"))
+
+
+def get_s3_file_content(*, s3_uri: str) -> bytes:
+    s3_file = parse_s3_uri(s3_uri=s3_uri)
+
     s3_client = get_s3_client()
 
     content = io.BytesIO()
     s3_client.download_fileobj(
         Fileobj=content,
-        Bucket=match.group("bucket"),
-        Key=match.group("key"),
+        Bucket=s3_file.bucket,
+        Key=s3_file.key,
     )
     content.seek(0)
 
     return content.read()
+
+
+def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
+    s3_file = parse_s3_uri(s3_uri=s3_uri)
+    s3_client = get_s3_client()
+
+    with SpooledTemporaryFile(max_size=4 * 1024 * 1024 * 1024) as f:
+        s3_client.download_fileobj(
+            Bucket=s3_file.bucket,
+            Key=s3_file.key,
+            Fileobj=f,
+        )
+
+        f.seek(0)
+
+        with tarfile.open(fileobj=f, mode="r") as tar:
+            tar.extractall(path=dest, filter="data")
 
 
 def validate_bucket_name(v: str) -> str:
@@ -69,6 +99,123 @@ def validate_bucket_name(v: str) -> str:
         return v
     else:
         raise ValueError("Invalid bucket name")
+
+
+def clean_path(path: Path) -> None:
+    for f in path.glob("*"):
+        if f.is_file():
+            f.chmod(0o700)
+            f.unlink()
+        elif f.is_dir():
+            f.chmod(0o700)
+            clean_path(f)
+            f.rmdir()
+
+
+class DependentData:
+    @property
+    def model_source(self) -> str | None:
+        """s3 URI to a .tar.gz file that is extracted to model_dest"""
+        model = os.environ.get("GRAND_CHALLENGE_COMPONENT_MODEL")
+        logger.debug(f"{model=}")
+        return model
+
+    @property
+    def model_dest(self) -> Path:
+        model_dest = Path(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_MODEL_DEST", "/opt/ml/model/"
+            )
+        )
+        logger.debug(f"{model_dest=}")
+        return model_dest
+
+    @property
+    def ground_truth_source(self) -> str | None:
+        """s3 URI to a .tar.gz file that is extracted to ground_truth_dest"""
+        ground_truth = os.environ.get("GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH")
+        logger.debug(f"{ground_truth=}")
+        return ground_truth
+
+    @property
+    def ground_truth_dest(self) -> Path:
+        ground_truth_dest = Path(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH_DEST",
+                "/opt/ml/input/data/ground_truth/",
+            )
+        )
+        logger.debug(f"{ground_truth_dest=}")
+        return ground_truth_dest
+
+    @property
+    def writable_directories(self) -> list[Path]:
+        writable_directories = [
+            Path(d)
+            for d in os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", ""
+            ).split(":")
+            if d
+        ]
+        logger.debug(f"{writable_directories=}")
+        return writable_directories
+
+    @property
+    def post_clean_directories(self) -> list[Path]:
+        post_clean_directories = [
+            Path(d)
+            for d in os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES", ""
+            ).split(":")
+            if d
+        ]
+        logger.debug(f"{post_clean_directories=}")
+        return post_clean_directories
+
+    def __enter__(self) -> "DependentData":
+        logger.info("Setting up Dependent Data")
+        self.ensure_directories_are_writable()
+        self.download_model()
+        self.download_ground_truth()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        logger.info("Cleaning up Dependent Data")
+        for p in self.post_clean_directories:
+            logger.info(f"Cleaning {p=}")
+            clean_path(p)
+
+    def ensure_directories_are_writable(self) -> None:
+        for directory in self.writable_directories:
+            path = Path(directory)
+            path.mkdir(exist_ok=True, parents=True)
+            path.chmod(mode=0o777)
+
+    def download_model(self) -> None:
+        if self.model_source is not None:
+            logger.info(
+                f"Downloading model from {self.model_source=} to {self.model_dest=}"
+            )
+            self.model_dest.mkdir(parents=True, exist_ok=True)
+            download_and_extract_tarball(
+                s3_uri=self.model_source, dest=self.model_dest
+            )
+
+    def download_ground_truth(self) -> None:
+        if self.ground_truth_source is not None:
+            logger.info(
+                f"Downloading ground truth from {self.ground_truth_source=} "
+                f"to {self.ground_truth_dest=}"
+            )
+            self.ground_truth_dest.mkdir(parents=True, exist_ok=True)
+            download_and_extract_tarball(
+                s3_uri=self.ground_truth_source, dest=self.ground_truth_dest
+            )
 
 
 class InferenceIO(BaseModel):
@@ -429,19 +576,8 @@ class InferenceTask(BaseModel):
 
     def clean_io(self) -> None:
         """Clean all contents of input and output folders"""
-        self._clean_path(path=self.input_path)
-        self._clean_path(path=self.output_path)
-
-    def _clean_path(self, *, path: Path) -> None:
-        """Removes contents of a directory, keeping the parent"""
-        for f in path.glob("*"):
-            if f.is_file():
-                f.chmod(0o700)
-                f.unlink()
-            elif f.is_dir():
-                f.chmod(0o700)
-                self._clean_path(path=f)
-                f.rmdir()
+        clean_path(path=self.input_path)
+        clean_path(path=self.output_path)
 
     def download_input(self) -> None:
         """Download all the inputs to the input path"""

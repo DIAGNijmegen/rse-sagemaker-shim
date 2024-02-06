@@ -13,6 +13,7 @@ from sagemaker_shim.models import (
     InferenceIO,
     InferenceResult,
     InferenceTask,
+    clean_path,
     get_s3_client,
 )
 from tests.utils import encode_b64j
@@ -339,11 +340,6 @@ def test_folder_cleanup(tmp_path):
     for f in ["test", ".test", "test/test", "test/.test", "nested/test/.test"]:
         (tmp_path / f).touch()
 
-    InferenceTask(
-        pk="das",
-        inputs=[],
-        output_bucket_name="FDAS",
-        output_prefix="fdsa",
-    )._clean_path(path=tmp_path)
+    clean_path(path=tmp_path)
 
     assert [*tmp_path.rglob("**/*")] == []

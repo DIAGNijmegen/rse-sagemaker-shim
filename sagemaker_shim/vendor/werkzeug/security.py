@@ -1,4 +1,5 @@
 """From Werkzeug 2.1"""
+
 import os
 import posixpath
 from pathlib import Path
