@@ -23,7 +23,7 @@ click = "*"
 boto3 = "*"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "*"
+pytest = "<8"  # pytest 8 is not yet supported by pytest-asyncio
 docker = "*"
 httpx = "*"
 pytest-randomly = "*"
