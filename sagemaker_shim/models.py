@@ -149,21 +149,35 @@ class DependentData:
         return ground_truth_dest
 
     @property
+    def writable_directories(self) -> list[Path]:
+        writable_directories = [
+            Path(d)
+            for d in os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", ""
+            ).split(":")
+            if d
+        ]
+        logger.debug(f"{writable_directories=}")
+        return writable_directories
+
+    @property
     def post_clean_directories(self) -> list[Path]:
         post_clean_directories = [
-            Path(p)
-            for p in os.environ.get(
+            Path(d)
+            for d in os.environ.get(
                 "GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES", ""
             ).split(":")
-            if p
+            if d
         ]
         logger.debug(f"{post_clean_directories=}")
         return post_clean_directories
 
-    def __enter__(self) -> None:
+    def __enter__(self) -> "DependentData":
         logger.info("Setting up Dependent Data")
+        self.ensure_directories_are_writable()
         self.download_model()
         self.download_ground_truth()
+        return self
 
     def __exit__(
         self,
@@ -175,6 +189,12 @@ class DependentData:
         for p in self.post_clean_directories:
             logger.info(f"Cleaning {p=}")
             clean_path(p)
+
+    def ensure_directories_are_writable(self) -> None:
+        for directory in self.writable_directories:
+            path = Path(directory)
+            path.mkdir(exist_ok=True, parents=True)
+            path.chmod(mode=0o777)
 
     def download_model(self) -> None:
         if self.model_source is not None:

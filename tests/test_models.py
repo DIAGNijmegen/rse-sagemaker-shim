@@ -4,6 +4,7 @@ import io
 import os
 import pwd
 import tarfile
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -310,3 +311,62 @@ def test_model_and_ground_truth_extraction(minio, monkeypatch, tmp_path):
         "model",
         "ground_truth",
     }
+
+
+def test_ensure_directories_are_writable_unset():
+    with DependentData() as d:
+        assert d.writable_directories == []
+        assert d.post_clean_directories == []
+        assert d.model_source is None
+        assert d.model_dest == Path("/opt/ml/model")
+        assert not d.model_dest.exists()
+        assert d.ground_truth_source is None
+        assert d.ground_truth_dest == Path("/opt/ml/input/data/ground_truth")
+        assert not d.ground_truth_dest.exists()
+
+
+@pytest.mark.parametrize(
+    "directories,expected",
+    (
+        ("", []),
+        (":", []),
+        ("::", []),
+    ),
+)
+def test_ensure_directories_are_writable_set(
+    monkeypatch, directories, expected
+):
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES",
+        directories,
+    )
+
+    d = DependentData()
+    assert d.writable_directories == expected
+
+
+def test_ensure_directories_are_writable(tmp_path, monkeypatch):
+    data = tmp_path / "opt" / "ml" / "output" / "data"
+    data.mkdir(mode=0o755, parents=True)
+
+    model = tmp_path / "opt" / "ml" / "model"
+    model.mkdir(mode=0o755, parents=True)
+
+    # Do not create the checkpoints dir in the test
+    checkpoints = tmp_path / "opt" / "ml" / "checkpoints"
+
+    tmp = tmp_path / "tmp"
+    tmp.mkdir(mode=0o755)
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES",
+        f"{data.absolute()}:{model.absolute()}:{checkpoints.absolute()}:{tmp.absolute()}",
+    )
+
+    with DependentData():
+        pass
+
+    assert data.stat().st_mode == 0o40777
+    assert model.stat().st_mode == 0o40777
+    assert checkpoints.stat().st_mode == 0o40777
+    assert tmp.stat().st_mode == 0o40777
