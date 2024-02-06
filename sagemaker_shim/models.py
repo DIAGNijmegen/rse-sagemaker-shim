@@ -112,9 +112,7 @@ def clean_path(path: Path) -> None:
             f.rmdir()
 
 
-class DependentData(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+class DependentData:
     @property
     def model_source(self) -> str | None:
         """s3 URI to a .tar.gz file that is extracted to model_dest"""
