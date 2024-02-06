@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
 import boto3
-import psutil
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
 from sagemaker_shim.exceptions import ZipExtractionError
@@ -82,10 +81,7 @@ def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
     s3_file = parse_s3_uri(s3_uri=s3_uri)
     s3_client = get_s3_client()
 
-    max_size = int(0.5 * psutil.virtual_memory().available)
-    logger.info(f"Using spooled temporary file with {max_size=} bytes")
-
-    with SpooledTemporaryFile(max_size=max_size) as f:
+    with SpooledTemporaryFile(max_size=4 * 1024 * 1024 * 1024) as f:
         s3_client.download_fileobj(
             Bucket=s3_file.bucket,
             Key=s3_file.key,

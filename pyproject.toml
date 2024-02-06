@@ -21,7 +21,6 @@ fastapi = "!=0.89.0"
 uvicorn = "*"
 click = "*"
 boto3 = "*"
-psutil = "*"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "!=8.0.0"  # pytest 8 is not yet supported by pytest-asyncio
