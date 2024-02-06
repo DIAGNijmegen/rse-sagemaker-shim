@@ -88,6 +88,8 @@ def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
             Fileobj=f,
         )
 
+        f.seek(0)
+
         with tarfile.open(fileobj=f, mode="r:gz") as tar:
             tar.extractall(path=dest, filter="data")
 
@@ -116,34 +118,52 @@ class DependentData(BaseModel):
     @property
     def model_source(self) -> str | None:
         """s3 URI to a .tar.gz file that is extracted to model_dest"""
-        return os.environ.get("GRAND_CHALLENGE_COMPONENT_MODEL")
+        model = os.environ.get("GRAND_CHALLENGE_COMPONENT_MODEL")
+        logger.debug(f"{model=}")
+        return model
 
     @property
     def model_dest(self) -> Path:
-        return Path("/opt/ml/model/")
+        model_dest = Path(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_MODEL_DEST", "/opt/ml/model/"
+            )
+        )
+        logger.debug(f"{model_dest=}")
+        return model_dest
 
     @property
     def ground_truth_source(self) -> str | None:
         """s3 URI to a .tar.gz file that is extracted to ground_truth_dest"""
-        return os.environ.get("GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH")
+        ground_truth = os.environ.get("GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH")
+        logger.debug(f"{ground_truth=}")
+        return ground_truth
 
     @property
     def ground_truth_dest(self) -> Path:
-        return Path("/opt/ml/input/data/ground_truth/")
+        ground_truth_dest = Path(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH_DEST",
+                "/opt/ml/input/data/ground_truth/",
+            )
+        )
+        logger.debug(f"{ground_truth_dest=}")
+        return ground_truth_dest
 
     @property
     def post_clean_directories(self) -> list[Path]:
-        return [
+        post_clean_directories = [
             Path(p)
             for p in os.environ.get(
                 "GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES", ""
             ).split(":")
             if p
         ]
+        logger.debug(f"{post_clean_directories=}")
+        return post_clean_directories
 
     def __enter__(self) -> None:
-        logger.info("Entering DependentData")
-
+        logger.info("Setting up Dependent Data")
         self.download_model()
         self.download_ground_truth()
 
@@ -153,13 +173,16 @@ class DependentData(BaseModel):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        logger.info("Exiting DependentData")
-
+        logger.info("Cleaning up Dependent Data")
         for p in self.post_clean_directories:
+            logger.info(f"Cleaning {p=}")
             clean_path(p)
 
     def download_model(self) -> None:
         if self.model_source is not None:
+            logger.info(
+                f"Downloading model from {self.model_source=} to {self.model_dest=}"
+            )
             self.model_dest.mkdir(parents=True, exist_ok=True)
             download_and_extract_tarball(
                 s3_uri=self.model_source, dest=self.model_dest
@@ -167,6 +190,10 @@ class DependentData(BaseModel):
 
     def download_ground_truth(self) -> None:
         if self.ground_truth_source is not None:
+            logger.info(
+                f"Downloading ground truth from {self.ground_truth_source=} "
+                f"to {self.ground_truth_dest=}"
+            )
             self.ground_truth_dest.mkdir(parents=True, exist_ok=True)
             download_and_extract_tarball(
                 s3_uri=self.ground_truth_source, dest=self.ground_truth_dest

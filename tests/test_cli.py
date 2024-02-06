@@ -194,6 +194,8 @@ def test_logging_setup(minio, monkeypatch):
         '{"log": "hello", "level": "INFO", '
         f'"source": "stdout", "internal": false, "task": "{pk}"}}'
     ) in result.output
+    assert "Setting up Dependent Data" in result.output
+    assert "Cleaning up Dependent Data" in result.output
 
 
 def test_logging_stderr_setup(minio, monkeypatch):

@@ -1,14 +1,19 @@
 import getpass
 import grp
+import io
 import os
 import pwd
+import tarfile
+from uuid import uuid4
 
 import pytest
 
 from sagemaker_shim.models import (
+    DependentData,
     InferenceTask,
     _get_users_groups,
     _put_gid_first,
+    get_s3_client,
     validate_bucket_name,
 )
 
@@ -218,3 +223,90 @@ def test_home_is_set(monkeypatch):
     )
 
     assert t.proc_env["HOME"] == pwd.getpwnam("root").pw_dir
+
+
+def test_model_and_ground_truth_extraction(minio, monkeypatch, tmp_path):
+    s3_client = get_s3_client()
+
+    model_pk = str(uuid4())
+
+    model_f = io.BytesIO()
+    with tarfile.open(fileobj=model_f, mode="w:gz") as tar:
+        content = b"Hello, World!"
+        file_info = tarfile.TarInfo("model-file1.txt")
+        file_info.size = len(content)
+        tar.addfile(file_info, io.BytesIO(content))
+
+        file_info = tarfile.TarInfo("model-sub/model-file2.txt")
+        file_info.size = len(content)
+        tar.addfile(file_info, io.BytesIO(content))
+
+    model_f.seek(0)
+
+    s3_client.upload_fileobj(
+        model_f, minio.input_bucket_name, f"{model_pk}/model.tar.gz"
+    )
+
+    ground_truth_pk = str(uuid4())
+
+    ground_truth_f = io.BytesIO()
+    with tarfile.open(fileobj=ground_truth_f, mode="w:gz") as tar:
+        content = b"Hello, World!"
+        file_info = tarfile.TarInfo("gt-file1.txt")
+        file_info.size = len(content)
+        tar.addfile(file_info, io.BytesIO(content))
+
+        file_info = tarfile.TarInfo("gt-sub/gt-file2.txt")
+        file_info.size = len(content)
+        tar.addfile(file_info, io.BytesIO(content))
+
+    ground_truth_f.seek(0)
+
+    s3_client.upload_fileobj(
+        ground_truth_f,
+        minio.input_bucket_name,
+        f"{ground_truth_pk}/ground_truth.tar.gz",
+    )
+
+    model_destination = tmp_path / "model"
+    ground_truth_destination = tmp_path / "ground_truth"
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_MODEL",
+        f"s3://{minio.input_bucket_name}/{model_pk}/model.tar.gz",
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_MODEL_DEST", str(model_destination)
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH",
+        f"s3://{minio.input_bucket_name}/{ground_truth_pk}/ground_truth.tar.gz",
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH_DEST",
+        str(ground_truth_destination),
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES",
+        f"{model_destination}:{ground_truth_destination}",
+    )
+
+    with DependentData():
+        downloaded_files = {
+            str(f.relative_to(tmp_path))
+            for f in tmp_path.rglob("**/*")
+            if f.is_file()
+        }
+
+    assert downloaded_files == {
+        "model/model-file1.txt",
+        "model/model-sub/model-file2.txt",
+        "ground_truth/gt-file1.txt",
+        "ground_truth/gt-sub/gt-file2.txt",
+    }
+
+    # Files should be cleaned up
+    assert {str(f.relative_to(tmp_path)) for f in tmp_path.rglob("**/*")} == {
+        "model",
+        "ground_truth",
+    }
