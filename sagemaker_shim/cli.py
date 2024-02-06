@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 from sagemaker_shim.app import app
 from sagemaker_shim.logging import LOGGING_CONFIG
-from sagemaker_shim.models import InferenceTaskList, get_s3_file_content
+from sagemaker_shim.models import InferenceTaskList, get_s3_file_content, DependentData
 
 T = TypeVar("T")
 
@@ -52,7 +52,8 @@ def cli() -> None:
 
 @cli.command(short_help="Start the model server")
 def serve() -> None:
-    uvicorn.run(app=app, host="0.0.0.0", port=8080, log_config=None, workers=1)
+    with DependentData():
+        uvicorn.run(app=app, host="0.0.0.0", port=8080, log_config=None, workers=1)
 
 
 @cli.command(short_help="Invoke the model")
@@ -95,12 +96,14 @@ async def invoke(tasks: str, file: str) -> None:
             f"The tasks definition is invalid:\n\n{error}"
         ) from error
 
-    if not parsed_tasks.root:
+    if parsed_tasks.root:
+        with DependentData():
+            for task in parsed_tasks.root:
+                # Only run one task at a time
+                await task.invoke()
+    else:
         raise click.UsageError("Empty task list provided")
 
-    for task in parsed_tasks.root:
-        # Only run one task at a time
-        await task.invoke()
 
 
 if __name__ == "__main__":
