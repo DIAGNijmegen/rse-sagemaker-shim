@@ -56,7 +56,7 @@ def test_patch_image(registry):
         FROM busybox:latest
         """
     )
-    repo_tag = f"{repo}/busybox:latest"
+    repo_tag = f"{repo}/my-busybox:latest"
 
     client.images.build(fileobj=dockerfile, tag=repo_tag)
     push_image(client=client, repo_tag=repo_tag)
