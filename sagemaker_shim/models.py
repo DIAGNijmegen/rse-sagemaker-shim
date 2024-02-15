@@ -217,21 +217,13 @@ class ProcUserTarfile(ProcUserMixin, tarfile.TarFile):
                 numeric_owner=numeric_owner,
             )
         else:
-            if hasattr(os, "geteuid") and os.geteuid() == 0:
-                # We are root, we can chown
+            # Do not change owner if the user or group is not set
+            uid = -1 if self.proc_user.uid is None else self.proc_user.uid
+            gid = -1 if self.proc_user.gid is None else self.proc_user.gid
 
-                # Do not change owner if the user or group is not set
-                uid = -1 if self.proc_user.uid is None else self.proc_user.uid
-                gid = -1 if self.proc_user.gid is None else self.proc_user.gid
+            logger.debug(f"Changing owner of {targetpath=} to {uid=}, {gid=}")
 
-                logger.debug(
-                    f"Changing owner of {targetpath=} to {uid=}, {gid=}"
-                )
-
-                try:
-                    os.chown(path=targetpath, uid=uid, gid=gid)
-                except OSError as e:
-                    raise tarfile.ExtractError("could not change owner") from e
+            os.chown(path=targetpath, uid=uid, gid=gid)
 
 
 def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
