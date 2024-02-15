@@ -26,9 +26,11 @@ from sagemaker_shim.extract import safe_extract
 from sagemaker_shim.logging import STDOUT_LEVEL
 
 if TYPE_CHECKING:
+    from _typeshed import StrOrBytesPath  # pragma: no cover
     from mypy_boto3_s3 import S3Client  # pragma: no cover
 else:
     S3Client = object
+    StrOrBytesPath = object
 
 
 logger = logging.getLogger(__name__)
@@ -40,15 +42,126 @@ BUCKET_ARN_REGEX = re.compile(
 )
 
 
-def get_s3_client() -> S3Client:
-    return boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
+class UserInfo(NamedTuple):
+    uid: int | None
+    gid: int | None
+    home: str | None
+    groups: list[int]
+
+
+class ProcUserMixin:
+    @property
+    def _user(self) -> str:
+        user = os.environ.get("GRAND_CHALLENGE_COMPONENT_USER", "")
+        logger.debug(f"{user=}")
+        return user
+
+    @cached_property
+    def proc_user(self) -> UserInfo:
+        if self._user == "":
+            return UserInfo(uid=None, gid=None, home=None, groups=[])
+
+        match = re.fullmatch(
+            r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self._user
+        )
+
+        if match:
+            info = self._get_user_info(id_or_name=match.group("user"))
+            group_id = self._get_group_id(id_or_name=match.group("group"))
+
+            gid = info.gid if group_id is None else group_id
+
+            return UserInfo(
+                uid=info.uid,
+                gid=gid,
+                home=info.home,
+                groups=self._put_gid_first(gid=gid, groups=info.groups),
+            )
+        else:
+            raise RuntimeError(f"Invalid user '{self._user}'")
+
+    @classmethod
+    def _get_user_info(cls, id_or_name: str) -> UserInfo:
+        if id_or_name == "":
+            return UserInfo(uid=None, gid=None, home=None, groups=[])
+
+        try:
+            user = pwd.getpwnam(id_or_name)
+        except (KeyError, AttributeError):
+            try:
+                uid = int(id_or_name)
+            except ValueError as error:
+                raise RuntimeError(f"User '{id_or_name}' not found") from error
+
+            try:
+                user = pwd.getpwuid(uid)
+            except (KeyError, AttributeError):
+                return UserInfo(uid=uid, gid=None, home=None, groups=[])
+
+        return UserInfo(
+            uid=user.pw_uid,
+            gid=user.pw_gid,
+            home=user.pw_dir,
+            groups=cls._get_users_groups(user=user),
+        )
+
+    @classmethod
+    def _get_users_groups(cls, *, user: pwd.struct_passwd) -> list[int]:
+        users_groups = [
+            g.gr_gid for g in grp.getgrall() if user.pw_name in g.gr_mem
+        ]
+        return cls._put_gid_first(gid=user.pw_gid, groups=users_groups)
+
+    @staticmethod
+    def _put_gid_first(*, gid: int | None, groups: list[int]) -> list[int]:
+        if gid is None:
+            return groups
+        else:
+            user_groups = set(groups)
+
+            try:
+                user_groups.remove(gid)
+            except KeyError:
+                pass
+
+            return [gid, *sorted(user_groups)]
+
+    @staticmethod
+    def _get_group_id(id_or_name: str) -> int | None:
+        if id_or_name == "":
+            return None
+
+        try:
+            return grp.getgrnam(id_or_name).gr_gid
+        except (KeyError, AttributeError):
+            try:
+                return int(id_or_name)
+            except ValueError as error:
+                raise RuntimeError(
+                    f"Group '{id_or_name}' not found"
+                ) from error
+
+
+def clean_path(path: Path) -> None:
+    for f in path.glob("*"):
+        if f.is_file():
+            f.chmod(0o700)
+            f.unlink()
+        elif f.is_dir():
+            f.chmod(0o700)
+            clean_path(f)
+            f.rmdir()
 
 
 class S3File(NamedTuple):
     bucket: str
     key: str
+
+
+def get_s3_client() -> S3Client:
+    return boto3.client(
+        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
+    )
 
 
 def parse_s3_uri(*, s3_uri: str) -> S3File:
@@ -77,6 +190,42 @@ def get_s3_file_content(*, s3_uri: str) -> bytes:
     return content.read()
 
 
+def validate_bucket_name(v: str) -> str:
+    if BUCKET_NAME_REGEX.match(v) or BUCKET_ARN_REGEX.match(v):
+        return v
+    else:
+        raise ValueError("Invalid bucket name")
+
+
+class ProcUserTarfile(ProcUserMixin, tarfile.TarFile):
+    """
+    A tarfile that sets the owner of the extracted files to the user and group
+    specified in the GRAND_CHALLENGE_COMPONENT_USER environment variable.
+    """
+
+    def chown(
+        self,
+        tarinfo: tarfile.TarInfo,
+        targetpath: StrOrBytesPath,
+        numeric_owner: bool,
+    ) -> None:
+        if self.proc_user.uid is None and self.proc_user.gid is None:
+            # No user or group specified, use the default
+            return super().chown(
+                tarinfo=tarinfo,
+                targetpath=targetpath,
+                numeric_owner=numeric_owner,
+            )
+        else:
+            # Do not change owner if the user or group is not set
+            uid = -1 if self.proc_user.uid is None else self.proc_user.uid
+            gid = -1 if self.proc_user.gid is None else self.proc_user.gid
+
+            logger.debug(f"Changing owner of {targetpath=} to {uid=}, {gid=}")
+
+            os.chown(path=targetpath, uid=uid, gid=gid)
+
+
 def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
     s3_file = parse_s3_uri(s3_uri=s3_uri)
     s3_client = get_s3_client()
@@ -90,29 +239,11 @@ def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
 
         f.seek(0)
 
-        with tarfile.open(fileobj=f, mode="r") as tar:
+        with ProcUserTarfile.open(fileobj=f, mode="r") as tar:
             tar.extractall(path=dest, filter="data")
 
 
-def validate_bucket_name(v: str) -> str:
-    if BUCKET_NAME_REGEX.match(v) or BUCKET_ARN_REGEX.match(v):
-        return v
-    else:
-        raise ValueError("Invalid bucket name")
-
-
-def clean_path(path: Path) -> None:
-    for f in path.glob("*"):
-        if f.is_file():
-            f.chmod(0o700)
-            f.unlink()
-        elif f.is_dir():
-            f.chmod(0o700)
-            clean_path(f)
-            f.rmdir()
-
-
-class DependentData:
+class AuxiliaryData:
     @property
     def model_source(self) -> str | None:
         """s3 URI to a .tar.gz file that is extracted to model_dest"""
@@ -172,8 +303,8 @@ class DependentData:
         logger.debug(f"{post_clean_directories=}")
         return post_clean_directories
 
-    def __enter__(self) -> "DependentData":
-        logger.info("Setting up Dependent Data")
+    def __enter__(self) -> "AuxiliaryData":
+        logger.info("Setting up Auxiliary Data")
         self.ensure_directories_are_writable()
         self.download_model()
         self.download_ground_truth()
@@ -185,7 +316,7 @@ class DependentData:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        logger.info("Cleaning up Dependent Data")
+        logger.info("Cleaning up Auxiliary Data")
         for p in self.post_clean_directories:
             logger.info(f"Cleaning {p=}")
             clean_path(p)
@@ -301,73 +432,7 @@ class InferenceResult(BaseModel):
     sagemaker_shim_version: str = version("sagemaker-shim")
 
 
-class UserInfo(NamedTuple):
-    uid: int | None
-    gid: int | None
-    home: str | None
-    groups: list[int]
-
-
-def _get_user_info(id_or_name: str) -> UserInfo:
-    if id_or_name == "":
-        return UserInfo(uid=None, gid=None, home=None, groups=[])
-
-    try:
-        user = pwd.getpwnam(id_or_name)
-    except (KeyError, AttributeError):
-        try:
-            uid = int(id_or_name)
-        except ValueError as error:
-            raise RuntimeError(f"User '{id_or_name}' not found") from error
-
-        try:
-            user = pwd.getpwuid(uid)
-        except (KeyError, AttributeError):
-            return UserInfo(uid=uid, gid=None, home=None, groups=[])
-
-    return UserInfo(
-        uid=user.pw_uid,
-        gid=user.pw_gid,
-        home=user.pw_dir,
-        groups=_get_users_groups(user=user),
-    )
-
-
-def _get_users_groups(*, user: pwd.struct_passwd) -> list[int]:
-    users_groups = [
-        g.gr_gid for g in grp.getgrall() if user.pw_name in g.gr_mem
-    ]
-    return _put_gid_first(gid=user.pw_gid, groups=users_groups)
-
-
-def _put_gid_first(*, gid: int | None, groups: list[int]) -> list[int]:
-    if gid is None:
-        return groups
-    else:
-        user_groups = set(groups)
-
-        try:
-            user_groups.remove(gid)
-        except KeyError:
-            pass
-
-        return [gid, *sorted(user_groups)]
-
-
-def _get_group_id(id_or_name: str) -> int | None:
-    if id_or_name == "":
-        return None
-
-    try:
-        return grp.getgrnam(id_or_name).gr_gid
-    except (KeyError, AttributeError):
-        try:
-            return int(id_or_name)
-        except ValueError as error:
-            raise RuntimeError(f"Group '{id_or_name}' not found") from error
-
-
-class InferenceTask(BaseModel):
+class InferenceTask(ProcUserMixin, BaseModel):
     model_config = ConfigDict(frozen=True)
 
     pk: str
@@ -418,10 +483,6 @@ class InferenceTask(BaseModel):
         )
         logger.debug(f"{entrypoint=}")
         return entrypoint
-
-    @property
-    def user(self) -> str:
-        return os.environ.get("GRAND_CHALLENGE_COMPONENT_USER", "")
 
     @property
     def input_path(self) -> Path:
@@ -506,30 +567,6 @@ class InferenceTask(BaseModel):
             env["HOME"] = self.proc_user.home
 
         return env
-
-    @cached_property
-    def proc_user(self) -> UserInfo:
-        if self.user == "":
-            return UserInfo(uid=None, gid=None, home=None, groups=[])
-
-        match = re.fullmatch(
-            r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self.user
-        )
-
-        if match:
-            info = _get_user_info(id_or_name=match.group("user"))
-            group_id = _get_group_id(id_or_name=match.group("group"))
-
-            gid = info.gid if group_id is None else group_id
-
-            return UserInfo(
-                uid=info.uid,
-                gid=gid,
-                home=info.home,
-                groups=_put_gid_first(gid=gid, groups=info.groups),
-            )
-        else:
-            raise RuntimeError(f"Invalid user '{self.user}'")
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""
