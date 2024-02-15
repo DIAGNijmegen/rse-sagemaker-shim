@@ -324,7 +324,7 @@ def test_model_and_ground_truth_extraction(
         f"{model_destination}:{ground_truth_destination}",
     )
 
-    mock = mocker.patch.object(ProcUserTarfile, "chown", autospec=True)
+    spy = mocker.spy(ProcUserTarfile, "chown")
 
     with AuxiliaryData():
         downloaded_files = {
@@ -347,7 +347,7 @@ def test_model_and_ground_truth_extraction(
     }
 
     # We cannot test chown as you need to be root, but we can test that it was called
-    assert mock.call_count == 4
+    assert spy.call_count == 4
 
 
 def test_ensure_directories_are_writable_unset():
