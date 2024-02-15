@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from sagemaker_shim.app import app
 from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import (
-    DependentData,
+    AuxiliaryData,
     InferenceTaskList,
     get_s3_file_content,
 )
@@ -39,7 +39,7 @@ def cli() -> None:
 
 @cli.command(short_help="Start the model server")
 def serve() -> None:
-    with DependentData():
+    with AuxiliaryData():
         uvicorn.run(
             app=app, host="0.0.0.0", port=8080, log_config=None, workers=1
         )
@@ -86,7 +86,7 @@ async def invoke(tasks: str, file: str) -> None:
         ) from error
 
     if parsed_tasks.root:
-        with DependentData():
+        with AuxiliaryData():
             for task in parsed_tasks.root:
                 # Only run one task at a time
                 await task.invoke()
