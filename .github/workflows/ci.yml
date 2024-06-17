@@ -48,7 +48,6 @@ jobs:
         run: |
           poetry install
           poetry run make -C dist clean
-          poetry run make -C dist all
       - name: Run pytest
         run: poetry run pytest
 
