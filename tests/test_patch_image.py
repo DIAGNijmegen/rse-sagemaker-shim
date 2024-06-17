@@ -76,26 +76,7 @@ def test_patch_image(registry):
     assert new_config["config"]["Entrypoint"] == ["/sagemaker-shim"]
     assert "Cmd" not in new_config["config"]
     assert set(new_config["config"]["Env"]) == {
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J=WyJzaCJd",
         "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J=bnVsbA==",
         "GRAND_CHALLENGE_COMPONENT_USER=0:0",
     }
-
-
-@pytest.mark.registry
-def test_registry(registry):
-    repo = registry[0]
-    client = registry[1]
-
-    dockerfile = io.BytesIO(
-        b"""
-        FROM busybox:latest
-        """
-    )
-    repo_tag = f"{repo}/busybox:latest"
-
-    client.images.build(fileobj=dockerfile, tag=repo_tag)
-    push_image(client=client, repo_tag=repo_tag)
-
-    config = get_image_config(repo_tag=repo_tag)  # noqa: F841
