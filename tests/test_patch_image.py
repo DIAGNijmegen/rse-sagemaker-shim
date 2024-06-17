@@ -85,4 +85,14 @@ def test_patch_image(registry):
 
 @pytest.mark.registry
 def test_registry(registry):
-    assert registry
+    repo = registry[0]
+    client = registry[1]
+
+    dockerfile = io.BytesIO(
+        b"""
+        FROM busybox:latest
+        """
+    )
+    repo_tag = f"{repo}/busybox:latest"
+
+    client.images.build(fileobj=dockerfile, tag=repo_tag)
