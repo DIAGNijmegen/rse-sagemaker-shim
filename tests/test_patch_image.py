@@ -81,3 +81,24 @@ def test_patch_image(registry):
         "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J=bnVsbA==",
         "GRAND_CHALLENGE_COMPONENT_USER=0:0",
     }
+
+
+def test_registry():
+    client = docker.from_env()
+    registry = client.containers.run(
+        image="registry:2",
+        ports={5000: None},
+        auto_remove=True,
+        detach=True,
+        init=True,
+    )
+
+    # Wait for startup
+    sleep(1)
+
+    try:
+        registry.reload()  # required to get ports
+        port = registry.ports["5000/tcp"][0]["HostPort"]
+        assert port
+    finally:
+        registry.stop(timeout=0)
