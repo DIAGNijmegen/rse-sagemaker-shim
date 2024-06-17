@@ -13,8 +13,8 @@ sagemaker-shim-static-${TEST_VERSION}: sagemaker-shim-${TEST_VERSION}
 	staticx "sagemaker-shim-${TEST_VERSION}" "sagemaker-shim-static-${TEST_VERSION}"
 
 crane-src.tar.gz:
-	curl -L https://github.com/google/go-containerregistry/releases/download/v0.17.0/go-containerregistry_Linux_x86_64.tar.gz -o crane-src.tar.gz && \
-	echo "1b4d3ee1e214776bd74b88741ccf1b070e8ed5660056f05af632a1a399fe21c6  crane-src.tar.gz" | shasum -c - || exit 1
+	curl -L https://github.com/google/go-containerregistry/releases/download/v0.19.2/go-containerregistry_Linux_x86_64.tar.gz -o crane-src.tar.gz && \
+	echo "8e5a27413b3fa3b95467c8d36dfb55f7109075872a05fcc0dd674f537439513d  crane-src.tar.gz" | shasum -c - || exit 1
 
 crane: crane-src.tar.gz
 	tar -xzvf crane-src.tar.gz crane && \
