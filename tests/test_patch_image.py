@@ -97,3 +97,5 @@ def test_registry(registry):
 
     client.images.build(fileobj=dockerfile, tag=repo_tag)
     push_image(client=client, repo_tag=repo_tag)
+
+    config = get_image_config(repo_tag=repo_tag)  # noqa: F841
