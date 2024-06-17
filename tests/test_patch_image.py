@@ -83,5 +83,6 @@ def test_patch_image(registry):
     }
 
 
+@pytest.mark.registry
 def test_registry(registry):
     assert registry
