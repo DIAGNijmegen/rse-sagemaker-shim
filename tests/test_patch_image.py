@@ -96,3 +96,4 @@ def test_registry(registry):
     repo_tag = f"{repo}/busybox:latest"
 
     client.images.build(fileobj=dockerfile, tag=repo_tag)
+    push_image(client=client, repo_tag=repo_tag)
