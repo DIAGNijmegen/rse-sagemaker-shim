@@ -25,7 +25,7 @@ def _registry_helper(request) -> None:
 def registry():
     client = docker.from_env()
     registry = client.containers.run(
-        image="registry:2.7",
+        image="registry:2",
         ports={5000: None},
         auto_remove=True,
         detach=True,
