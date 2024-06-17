@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sagemaker-shim"
-version = "0.3.0a2"
+version = "0.3.0"
 description = "Adapts algorithms that implement the Grand Challenge inference API for running in SageMaker"
 authors = ["James Meakin <12661555+jmsmkn@users.noreply.github.com>"]
 license = "Apache-2.0"
@@ -16,8 +16,8 @@ sagemaker-shim = "sagemaker_shim.cli:cli"
 
 [tool.poetry.dependencies]
 # Only support one version of python at a time
-python = "^3.11,<3.12"
-fastapi = "!=0.89.0"
+python = "^3.12,<3.13"
+fastapi = "!=0.89.0,<0.111.0"  # See https://github.com/DIAGNijmegen/rse-sagemaker-shim/issues/26
 uvicorn = "*"
 click = "*"
 boto3 = "*"
@@ -48,7 +48,7 @@ line_length = 79
 
 [tool.black]
 line-length = 79
-target-version = ['py311']
+target-version = ['py312']
 
 [tool.pytest.ini_options]
 markers = [

@@ -35,7 +35,7 @@ def _container_helper(request) -> None:
 def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
     client = docker.from_env()
     registry = client.containers.run(
-        image="registry:2.7",
+        image="registry:2",
         ports={5000: None},
         auto_remove=True,
         detach=True,
@@ -181,7 +181,7 @@ def test_alpine_image(minio):
     # https://github.com/JonathonReinhart/staticx/issues/143
     host_port = 8081
     with _container(
-        base_image="python:3.11-alpine",
+        base_image="python:3.12-alpine",
         host_port=host_port,
         cmd=["python", "-c", "print('hello_world')"],
     ):

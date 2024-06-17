@@ -25,7 +25,7 @@ def _registry_helper(request) -> None:
 def registry():
     client = docker.from_env()
     registry = client.containers.run(
-        image="registry:2.7",
+        image="registry:2",
         ports={5000: None},
         auto_remove=True,
         detach=True,
@@ -76,7 +76,6 @@ def test_patch_image(registry):
     assert new_config["config"]["Entrypoint"] == ["/sagemaker-shim"]
     assert "Cmd" not in new_config["config"]
     assert set(new_config["config"]["Env"]) == {
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J=WyJzaCJd",
         "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J=bnVsbA==",
         "GRAND_CHALLENGE_COMPONENT_USER=0:0",
