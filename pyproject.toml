@@ -16,7 +16,7 @@ sagemaker-shim = "sagemaker_shim.cli:cli"
 
 [tool.poetry.dependencies]
 # Only support one version of python at a time
-python = "^3.12,<3.13"
+python = "^3.11,<3.12"
 fastapi = "!=0.89.0"
 uvicorn = "*"
 click = "*"
@@ -48,7 +48,7 @@ line_length = 79
 
 [tool.black]
 line-length = 79
-target-version = ['py312']
+target-version = ['py311']
 
 [tool.pytest.ini_options]
 markers = [
