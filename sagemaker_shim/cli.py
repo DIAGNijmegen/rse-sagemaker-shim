@@ -41,7 +41,14 @@ def cli() -> None:
 def serve() -> None:
     with AuxiliaryData():
         uvicorn.run(
-            app=app, host="0.0.0.0", port=8080, log_config=None, workers=1
+            app=app,
+            host="0.0.0.0",
+            port=8080,
+            log_config=None,
+            workers=1,
+            # uvloop does not accept the user or group parameters
+            # to subprocess so force using asyncio
+            loop="asyncio",
         )
 
 
