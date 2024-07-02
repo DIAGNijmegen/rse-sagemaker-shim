@@ -97,7 +97,7 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
             )
 
             # Wait for startup
-            sleep(3)
+            sleep(5)
 
             try:
                 yield container
