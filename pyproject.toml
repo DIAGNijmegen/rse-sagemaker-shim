@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sagemaker-shim"
-version = "0.3.0"
+version = "0.3.1"
 description = "Adapts algorithms that implement the Grand Challenge inference API for running in SageMaker"
 authors = ["James Meakin <12661555+jmsmkn@users.noreply.github.com>"]
 license = "Apache-2.0"
@@ -21,6 +21,7 @@ fastapi = "!=0.89.0"  # See https://github.com/DIAGNijmegen/rse-sagemaker-shim/i
 uvicorn = "*"
 click = "*"
 boto3 = "*"
+psutil = "*"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "!=8.0.0"  # pytest 8 is not yet supported by pytest-asyncio
