@@ -106,9 +106,12 @@ async def invoke(tasks: str, file: str) -> None:
 def set_memory_limits() -> None:
     total_memory_bytes = psutil.virtual_memory().total
 
+    # Reserve 1GB for the system
+    limit = total_memory_bytes - 1_073_741_824
+
     resource.setrlimit(
         resource.RLIMIT_AS,
-        (int(total_memory_bytes * 0.85), int(total_memory_bytes * 0.95)),
+        (limit, limit),
     )
 
 
