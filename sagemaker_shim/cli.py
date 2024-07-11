@@ -1,5 +1,6 @@
 import asyncio
 import logging.config
+import os
 import resource
 import sys
 from collections.abc import Callable, Coroutine
@@ -104,15 +105,18 @@ async def invoke(tasks: str, file: str) -> None:
 
 
 def set_memory_limits() -> None:
-    total_memory_bytes = psutil.virtual_memory().total
-
-    # Reserve 1GB for the system
-    limit = total_memory_bytes - 1_073_741_824
-
-    resource.setrlimit(
-        resource.RLIMIT_AS,
-        (limit, limit),
+    reserved_bytes = int(
+        os.environ.get(
+            "GRAND_CHALLENGE_COMPONENT_RESERVED_BYTES", 1_073_741_824
+        )
     )
+
+    if reserved_bytes:
+        total_memory_bytes = psutil.virtual_memory().total
+
+        limit = total_memory_bytes - reserved_bytes
+
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 
 
 if __name__ == "__main__":
