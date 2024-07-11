@@ -116,7 +116,7 @@ def set_memory_limits() -> None:
 
         limit = total_memory_bytes - reserved_bytes
 
-        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+        resource.setrlimit(resource.RLIMIT_RSS, (limit, limit))
 
 
 if __name__ == "__main__":
