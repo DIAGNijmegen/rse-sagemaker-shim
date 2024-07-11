@@ -1,7 +1,5 @@
 import asyncio
 import logging.config
-import os
-import resource
 import sys
 from collections.abc import Callable, Coroutine
 from functools import wraps
@@ -9,7 +7,6 @@ from json import JSONDecodeError
 from typing import Any, TypeVar
 
 import click
-import psutil
 import uvicorn
 from botocore.exceptions import ClientError, NoCredentialsError
 from pydantic import ValidationError
@@ -104,24 +101,7 @@ async def invoke(tasks: str, file: str) -> None:
         raise click.UsageError("Empty task list provided")
 
 
-def set_memory_limits() -> None:
-    reserved_bytes = int(
-        os.environ.get(
-            "GRAND_CHALLENGE_COMPONENT_RESERVED_BYTES", 1_073_741_824
-        )
-    )
-
-    if reserved_bytes:
-        total_memory_bytes = psutil.virtual_memory().total
-
-        limit = total_memory_bytes - reserved_bytes
-
-        resource.setrlimit(resource.RLIMIT_RSS, (limit, limit))
-
-
 if __name__ == "__main__":
-    set_memory_limits()
-
     # https://pyinstaller.org/en/stable/runtime-information.html#run-time-information
     we_are_bundled = getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
 
