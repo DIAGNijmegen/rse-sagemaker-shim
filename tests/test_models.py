@@ -407,3 +407,50 @@ def test_ensure_directories_are_writable(tmp_path, monkeypatch):
     assert model.stat().st_mode == 0o40777
     assert checkpoints.stat().st_mode == 0o40777
     assert tmp.stat().st_mode == 0o40777
+
+
+def test_linked_input_path_default():
+    t = InferenceTask(
+        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+    )
+
+    assert t.linked_input_path == Path("/opt/ml/input/data/test-input")
+
+
+def test_linked_input_path_setting(monkeypatch):
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT", "/foo")
+
+    t = InferenceTask(
+        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+    )
+
+    assert t.linked_input_path == Path("/foo/test-input")
+
+
+def test_reset_linked_input(tmp_path, monkeypatch):
+    input_path = tmp_path / "input"
+    linked_input_parent = tmp_path / "linked-input"
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH", input_path.absolute()
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT", linked_input_parent
+    )
+
+    t = InferenceTask(
+        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+    )
+    t.reset_io()
+
+    expected_input_directory = linked_input_parent / "test-input"
+
+    assert input_path.exists()
+    assert input_path.is_symlink()
+    assert expected_input_directory.exists()
+    assert expected_input_directory.is_dir()
+    assert input_path.resolve(strict=True) == expected_input_directory
+
+    # Ensure 0o755 permissions
+    assert os.stat(input_path).st_mode & 0o777 == 0o755
+    assert os.stat(expected_input_directory).st_mode & 0o777 == 0o755
