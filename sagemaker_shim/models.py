@@ -144,7 +144,7 @@ class ProcUserMixin:
 
 def clean_path(path: Path) -> None:
     for f in path.glob("*"):
-        if f.is_file():
+        if f.is_symlink() or f.is_file():
             f.chmod(0o700)
             f.unlink()
         elif f.is_dir():
@@ -494,6 +494,19 @@ class InferenceTask(ProcUserMixin, BaseModel):
         return input_path
 
     @property
+    def linked_input_path(self) -> Path:
+        """Local path where the input files will be placed and linked to"""
+        linked_input_parent = Path(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
+                "/opt/ml/input/data/",
+            )
+        )
+        linked_input_path = linked_input_parent / self.pk
+        logger.debug(f"{linked_input_path=}")
+        return linked_input_path
+
+    @property
     def output_path(self) -> Path:
         """Local path where the subprocess is expected to write its files"""
         output_path = Path(
@@ -590,7 +603,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
         logger.info(f"Invoking {self.pk=}")
 
         try:
-            self.clean_io()
+            self.reset_io()
 
             try:
                 self.download_input()
@@ -609,12 +622,43 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 pk=self.pk, return_code=return_code, outputs=outputs
             )
         finally:
-            self.clean_io()
+            self.reset_io()
 
-    def clean_io(self) -> None:
-        """Clean all contents of input and output folders"""
+    def reset_io(self) -> None:
+        """Resets the input and output directories"""
         clean_path(path=self.input_path)
         clean_path(path=self.output_path)
+        self.reset_linked_input()
+
+    def reset_linked_input(self) -> None:
+        """Resets the symlink from the input to the linked directory"""
+        if (
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "True"
+            ).lower()
+            == "true"
+        ):
+            logger.info(
+                f"Setting up linked input from {self.input_path} "
+                f"to {self.linked_input_path}"
+            )
+
+            if self.input_path.exists():
+                if self.input_path.is_symlink():
+                    self.input_path.unlink()
+                elif self.input_path.is_dir():
+                    self.input_path.rmdir()
+
+            if self.linked_input_path.exists():
+                self.linked_input_path.rmdir()
+
+            self.linked_input_path.mkdir(parents=True)
+            self.linked_input_path.chmod(0o755)
+
+            self.input_path.symlink_to(
+                self.linked_input_path, target_is_directory=True
+            )
+            self.input_path.chmod(0o755)
 
     def download_input(self) -> None:
         """Download all the inputs to the input path"""
