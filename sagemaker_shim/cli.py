@@ -9,7 +9,6 @@ from json import JSONDecodeError
 from typing import Any, TypeVar
 
 import click
-import psutil
 import uvicorn
 from botocore.exceptions import ClientError, NoCredentialsError
 from pydantic import ValidationError
@@ -21,6 +20,8 @@ from sagemaker_shim.models import (
     InferenceTaskList,
     get_s3_file_content,
 )
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -38,6 +39,7 @@ def async_to_sync(
 @click.group()
 def cli() -> None:
     logging.config.dictConfig(LOGGING_CONFIG)
+    set_memory_limits()
 
 
 @cli.command(short_help="Start the model server")
@@ -105,23 +107,19 @@ async def invoke(tasks: str, file: str) -> None:
 
 
 def set_memory_limits() -> None:
-    reserved_bytes = int(
-        os.environ.get(
-            "GRAND_CHALLENGE_COMPONENT_RESERVED_BYTES", 1_073_741_824
-        )
+    max_memory_mb = int(
+        os.environ.get("GRAND_CHALLENGE_COMPONENT_MAX_MEMORY_MB", "0")
     )
 
-    if reserved_bytes:
-        total_memory_bytes = psutil.virtual_memory().total
-
-        limit = total_memory_bytes - reserved_bytes
-
+    if max_memory_mb:
+        logger.info(f"Setting memory limit to {max_memory_mb} MB")
+        limit = max_memory_mb * 1024 * 1024
         resource.setrlimit(resource.RLIMIT_DATA, (limit, limit))
+    else:
+        logger.info("Not setting a memory limit")
 
 
 if __name__ == "__main__":
-    set_memory_limits()
-
     # https://pyinstaller.org/en/stable/runtime-information.html#run-time-information
     we_are_bundled = getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
 

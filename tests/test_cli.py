@@ -1,5 +1,7 @@
 import io
 import json
+import resource
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -227,4 +229,64 @@ def test_logging_stderr_setup(minio, monkeypatch):
     assert (
         '{"log": "hello", "level": "WARNING", '
         f'"source": "stderr", "internal": false, "task": "{pk}"}}'
+    ) in result.output
+
+
+def test_memory_limit_undefined(minio, monkeypatch):
+    pk = str(uuid4())
+    tasks = [
+        {
+            "pk": pk,
+            "inputs": [],
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": f"tasks/{pk}",
+        }
+    ]
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
+
+    assert (
+        '{"log": "Not setting a memory limit", "level": "INFO", '
+        '"source": "stdout", "internal": true, "task": null}'
+    ) in result.output
+
+
+def test_memory_limit_defined(minio, monkeypatch):
+    pk = str(uuid4())
+    tasks = [
+        {
+            "pk": pk,
+            "inputs": [],
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": f"tasks/{pk}",
+        }
+    ]
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_MAX_MEMORY_MB", "1337")
+
+    expected_limit = 1337 * 1024 * 1024
+
+    with patch("resource.setrlimit") as mock_setrlimit:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
+
+        mock_setrlimit.assert_called_once_with(
+            resource.RLIMIT_DATA, (expected_limit, expected_limit)
+        )
+
+    assert (
+        '{"log": "Setting memory limit to 1337 MB", "level": "INFO", '
+        '"source": "stdout", "internal": true, "task": null}'
     ) in result.output
