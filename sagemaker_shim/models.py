@@ -502,7 +502,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 "/opt/ml/input/data/",
             )
         )
-        linked_input_path = linked_input_parent / self.pk
+        linked_input_path = linked_input_parent / f"{self.pk}-input"
         logger.debug(f"{linked_input_path=}")
         return linked_input_path
 
