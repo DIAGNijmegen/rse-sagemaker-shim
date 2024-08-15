@@ -44,6 +44,8 @@ def cli() -> None:
 
 @cli.command(short_help="Start the model server")
 def serve() -> None:
+    logger.info("Starting the model server")
+
     with AuxiliaryData():
         uvicorn.run(
             app=app,
@@ -55,6 +57,8 @@ def serve() -> None:
             # to subprocess so force using asyncio
             loop="asyncio",
         )
+
+    logger.info("Model server stopped")
 
 
 @cli.command(short_help="Invoke the model")
@@ -74,6 +78,8 @@ def serve() -> None:
 )
 @async_to_sync
 async def invoke(tasks: str, file: str) -> None:
+    logger.info("Invoking the model")
+
     tasks_json: str | bytes
 
     if tasks and file:
@@ -104,6 +110,8 @@ async def invoke(tasks: str, file: str) -> None:
                 await task.invoke()
     else:
         raise click.UsageError("Empty task list provided")
+
+    logger.info("Model invocation complete")
 
 
 def set_memory_limits() -> None:

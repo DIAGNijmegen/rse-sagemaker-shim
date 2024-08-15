@@ -209,6 +209,8 @@ class ProcUserTarfile(ProcUserMixin, tarfile.TarFile):
         targetpath: StrOrBytesPath,
         numeric_owner: bool,
     ) -> None:
+        logger.info(f"chown of extracted {targetpath=}")
+
         if self.proc_user.uid is None and self.proc_user.gid is None:
             # No user or group specified, use the default
             return super().chown(
@@ -583,25 +585,23 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
     async def invoke(self) -> InferenceResult:
         """Run the inference on a single case"""
+        logger.info(f"Awaiting lock for {self.pk=}")
 
         await asyncio.wait_for(lock.acquire(), timeout=1.0)
 
+        logger.info(f"Invoking {self.pk=}")
+
         try:
             inference_result = await self._invoke()
-
-            logger.info(
-                f"Inference for {self.pk=} complete, {inference_result=}"
-            )
-
             self.upload_inference_result(inference_result=inference_result)
-
-            return inference_result
         finally:
             lock.release()
 
-    async def _invoke(self) -> InferenceResult:
-        logger.info(f"Invoking {self.pk=}")
+        logger.info(f"Invocation {self.pk=} complete")
 
+        return inference_result
+
+    async def _invoke(self) -> InferenceResult:
         try:
             self.reset_io()
 
@@ -700,8 +700,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
         )
 
         logger.info(
-            f"Uploading Inference Result to "
-            f"{self.output_bucket_name=} with {bucket_key=}"
+            f"Uploading {bucket_key=} in "
+            f"{self.output_bucket_name=} with {inference_result=}"
         )
 
         self._s3_client.upload_fileobj(
