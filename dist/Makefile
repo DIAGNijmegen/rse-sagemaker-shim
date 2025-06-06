@@ -1,4 +1,4 @@
-TEST_VERSION=$(shell uv run python -c "from tests import __version__;print(__version__)")
+TEST_VERSION=$(shell PYTHONPATH="${PYTHONPATH}:.." uv run python -c "from tests import __version__;print(__version__)")
 RELEASE_VERSION="$(shell uv version --short)-$(shell uname -s)-$(shell uname -m)"
 DIST_DIR=./dist
 
