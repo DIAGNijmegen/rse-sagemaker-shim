@@ -63,20 +63,26 @@ def test_patch_image(registry):
 
     config = get_image_config(repo_tag=repo_tag)
     env_vars = get_new_env_vars(existing_config=config)
-    new_tag = mutate_image(
-        repo_tag=repo_tag, env_vars=env_vars, version=__version__
-    )
-    new_config = get_image_config(repo_tag=new_tag)
 
+    assert set(config["config"]["Env"]) == {
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    }
     assert env_vars == {
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J": "WyJzaCJd",
         "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J": "bnVsbA==",
         "GRAND_CHALLENGE_COMPONENT_USER": "0:0",
     }
+
+    new_tag = mutate_image(
+        repo_tag=repo_tag, env_vars=env_vars, version=__version__
+    )
+    new_config = get_image_config(repo_tag=new_tag)
+
     assert new_config["config"]["Entrypoint"] == ["/sagemaker-shim"]
     assert "Cmd" not in new_config["config"]
     assert set(new_config["config"]["Env"]) == {
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J=WyJzaCJd",
         "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J=bnVsbA==",
         "GRAND_CHALLENGE_COMPONENT_USER=0:0",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     }
