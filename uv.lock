@@ -550,8 +550,8 @@ wheels = [
 
 [[package]]
 name = "sagemaker-shim"
-version = "0.3.5"
-source = { virtual = "." }
+version = "0.4.0a0"
+source = { editable = "." }
 dependencies = [
     { name = "boto3" },
     { name = "click" },
@@ -571,7 +571,7 @@ dev = [
     { name = "pytest-mock" },
     { name = "pytest-randomly" },
     { name = "pytest-xdist" },
-    { name = "staticx" },
+    { name = "staticx", marker = "sys_platform == 'linux'" },
 ]
 
 [package.metadata]
@@ -594,7 +594,7 @@ dev = [
     { name = "pytest-mock" },
     { name = "pytest-randomly" },
     { name = "pytest-xdist" },
-    { name = "staticx" },
+    { name = "staticx", marker = "sys_platform == 'linux'" },
 ]
 
 [[package]]

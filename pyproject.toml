@@ -33,7 +33,7 @@ dev = [
     "pytest-randomly",
     "pytest-xdist",
     "pytest-cov",
-    "staticx",
+    "staticx;sys_platform=='linux'",
     "pyinstaller",
     "boto3-stubs[s3]",
     "pytest-mock",
@@ -68,3 +68,6 @@ omit = [
     "tests/batch_transform.py",
     "sagemaker_shim/cli.py", # This is covered by docker integration tests
 ]
+
+[tool.uv]
+package = true
