@@ -32,6 +32,7 @@ jobs:
         run: pre-commit run --all-files
 
   build:
+    # Must use ubuntu 22 in order to use deadsnakes python 3.12
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +55,7 @@ jobs:
   deploy:
     if: github.event_name == 'release'
     needs: [precommit, build]
+    # Must use ubuntu 22 in order to use deadsnakes python 3.12
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
