@@ -6,4 +6,4 @@ build:
 		-v $(shell readlink -f ./dist/):/opt/src/dist/ \
 		--rm \
 		sagemaker_shim \
-		bash -c "poetry run make -C dist clean && poetry run make -C dist release"
+		bash -c "uv run make -C dist clean && uv run make -C dist release"
