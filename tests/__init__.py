@@ -9,7 +9,7 @@ def get_version():
 
     files = [
         *(root_dir / "sagemaker_shim").rglob("**/*.py"),
-        root_dir / "poetry.lock",
+        root_dir / "uv.lock",
     ]
 
     for file in files:
