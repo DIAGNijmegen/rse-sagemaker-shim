@@ -47,6 +47,7 @@ jobs:
           python -m pip install uv
       - name: Build the binary
         run: |
+          uv sync
           uv run make -C dist clean
       - name: Run pytest
         run: uv run pytest
@@ -69,6 +70,7 @@ jobs:
           python -m pip install uv
       - name: Build the binary
         run: |
+          uv sync
           uv run make -C dist clean
           uv run make -C dist release
       - name: Upload to release
