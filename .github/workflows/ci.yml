@@ -32,12 +32,13 @@ jobs:
         run: pre-commit run --all-files
 
   build:
-    runs-on: ubuntu-latest
+    # Must use ubuntu 22 in order to use deadsnakes python 3.12
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         # deadsnakes python required due to https://github.com/JonathonReinhart/staticx/issues/188
-        uses: deadsnakes/action@v3.1.0
+        uses: deadsnakes/action@v3.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
@@ -54,12 +55,13 @@ jobs:
   deploy:
     if: github.event_name == 'release'
     needs: [precommit, build]
-    runs-on: ubuntu-latest
+    # Must use ubuntu 22 in order to use deadsnakes python 3.12
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         # deadsnakes python required due to https://github.com/JonathonReinhart/staticx/issues/188
-        uses: deadsnakes/action@v3.1.0
+        uses: deadsnakes/action@v3.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
