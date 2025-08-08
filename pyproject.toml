@@ -11,7 +11,7 @@ dependencies = [
     "boto3",
 ]
 name = "sagemaker-shim"
-version = "0.4.0a0"
+version = "0.4.0"
 description = "Adapts algorithms that implement the Grand Challenge inference API for running in SageMaker"
 readme = "README.md"
 classifiers = [
