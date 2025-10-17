@@ -11,6 +11,7 @@ import pwd
 import re
 import subprocess
 import tarfile
+from asyncio import Semaphore
 from base64 import b64decode
 from functools import cached_property
 from importlib.metadata import version
@@ -30,6 +31,9 @@ from sagemaker_shim.logging import STDOUT_LEVEL
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath  # pragma: no cover
     from mypy_boto3_s3 import S3Client  # pragma: no cover
+    from types_aiobotocore_s3.client import (
+        S3Client as AsyncS3Client,  # pragma: no cover
+    )
 else:
     S3Client = object
     StrOrBytesPath = object
@@ -176,17 +180,20 @@ def parse_s3_uri(*, s3_uri: str) -> S3File:
     return S3File(bucket=match.group("bucket"), key=match.group("key"))
 
 
-def get_s3_file_content(*, s3_uri: str) -> bytes:
+async def get_s3_file_content(
+    *, s3_uri: str, s3_client: AsyncS3Client, semaphore: Semaphore
+) -> bytes:
     s3_file = parse_s3_uri(s3_uri=s3_uri)
 
-    s3_client = get_s3_client()
-
     content = io.BytesIO()
-    s3_client.download_fileobj(
-        Fileobj=content,
-        Bucket=s3_file.bucket,
-        Key=s3_file.key,
-    )
+
+    async with semaphore:
+        await s3_client.download_fileobj(
+            Fileobj=content,
+            Bucket=s3_file.bucket,
+            Key=s3_file.key,
+        )
+
     content.seek(0)
 
     return content.read()

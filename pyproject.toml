@@ -9,6 +9,7 @@ dependencies = [
     "uvicorn",
     "click",
     "boto3",
+    "aioboto3",
 ]
 name = "sagemaker-shim"
 version = "0.4.0"
@@ -38,6 +39,7 @@ dev = [
     "boto3-stubs[s3]",
     "pytest-mock",
     "pytest-asyncio",
+    "types-aioboto3[s3]",
 ]
 
 [tool.isort]
