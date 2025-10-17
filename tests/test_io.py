@@ -143,6 +143,17 @@ async def test_input_decompress(minio, tmp_path, monkeypatch):
 async def test_invoke_with_dodgy_file(
     client, minio, tmp_path, monkeypatch, capsys
 ):
+    input_path = tmp_path / "input"
+    linked_input_parent = tmp_path / "linked-input"
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH", str(input_path.absolute())
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
+        str(linked_input_parent),
+    )
+
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {
@@ -201,6 +212,17 @@ async def test_invoke_with_dodgy_file(
 async def test_invoke_with_non_zip(
     client, minio, tmp_path, monkeypatch, capsys
 ):
+    input_path = tmp_path / "input"
+    linked_input_parent = tmp_path / "linked-input"
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH", str(input_path.absolute())
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
+        str(linked_input_parent),
+    )
+
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {

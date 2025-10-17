@@ -9,7 +9,6 @@ dependencies = [
     "uvicorn",
     "click",
     "aioboto3",
-    "aiofiles",
     "botocore",
 ]
 name = "sagemaker-shim"

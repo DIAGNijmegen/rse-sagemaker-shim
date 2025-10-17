@@ -18,13 +18,12 @@ from contextlib import asynccontextmanager
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
-from tempfile import SpooledTemporaryFile
+from tempfile import SpooledTemporaryFile, TemporaryDirectory
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
 import aioboto3
-from aiofiles.tempfile import TemporaryDirectory
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
@@ -432,8 +431,9 @@ class InferenceIO(BaseModel):
         dest_file.parent.mkdir(exist_ok=True, parents=True)
 
         if self.decompress:
-            async with TemporaryDirectory() as tmp_dir:
+            with TemporaryDirectory() as tmp_dir:
                 zipfile = Path(tmp_dir) / "src.zip"
+
                 with zipfile.open("wb") as f:
                     async with semaphore:
                         await s3_client.download_fileobj(
@@ -441,6 +441,7 @@ class InferenceIO(BaseModel):
                             Key=self.bucket_key,
                             Fileobj=f,
                         )
+
                 try:
                     safe_extract(src=zipfile, dest=dest_file.parent)
                 except BadZipFile as error:
@@ -679,9 +680,18 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 await self.download_input(
                     semaphore=semaphore, s3_client=s3_client
                 )
-            except ZipExtractionError as error:
-                self.log_external(level=logging.ERROR, msg=str(error))
-                return InferenceResult(pk=self.pk, return_code=1, outputs=[])
+            except ExceptionGroup as eg:
+                zip_group, rest = eg.split(ZipExtractionError)
+                if zip_group:
+                    for e in zip_group.exceptions:
+                        self.log_external(level=logging.ERROR, msg=str(e))
+                    return InferenceResult(
+                        pk=self.pk, return_code=1, outputs=[]
+                    )
+
+                if rest:
+                    # re-raise any exceptions that were not ZipExtractionError
+                    raise rest
 
             return_code = await self.execute()
 
