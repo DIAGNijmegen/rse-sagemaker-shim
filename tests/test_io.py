@@ -23,7 +23,8 @@ from sagemaker_shim.models import (
 from tests.utils import encode_b64j
 
 
-def test_input_download(minio, tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_input_download(minio, tmp_path, monkeypatch):
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -71,7 +72,9 @@ def test_input_download(minio, tmp_path, monkeypatch):
         "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
         str(tmp_path),
     )
-    task.download_input()
+
+    async with s3_resources() as (semaphore, s3_client):
+        await task.download_input(semaphore=semaphore, s3_client=s3_client)
 
     # Check
     with open(tmp_path / "root.bin", "rb") as f:
@@ -84,7 +87,8 @@ def test_input_download(minio, tmp_path, monkeypatch):
     assert created_sub == sub_data
 
 
-def test_input_decompress(minio, tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_input_decompress(minio, tmp_path, monkeypatch):
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -123,7 +127,9 @@ def test_input_decompress(minio, tmp_path, monkeypatch):
         "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
         str(tmp_path),
     )
-    task.download_input()
+
+    async with s3_resources() as (semaphore, s3_client):
+        await task.download_input(semaphore=semaphore, s3_client=s3_client)
 
     # Check
     with open(tmp_path / "sub" / "test.txt") as f:

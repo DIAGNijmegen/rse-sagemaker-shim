@@ -10,6 +10,7 @@ dependencies = [
     "click",
     "boto3",
     "aioboto3",
+    "aiofiles",
 ]
 name = "sagemaker-shim"
 version = "0.4.0"
@@ -40,6 +41,7 @@ dev = [
     "pytest-mock",
     "pytest-asyncio",
     "types-aioboto3[s3]",
+    "types-aiofiles",
 ]
 
 [tool.isort]

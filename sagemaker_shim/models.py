@@ -18,13 +18,14 @@ from contextlib import asynccontextmanager
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
-from tempfile import SpooledTemporaryFile, TemporaryDirectory
+from tempfile import SpooledTemporaryFile
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
 import aioboto3
 import boto3
+from aiofiles.tempfile import TemporaryDirectory
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
@@ -423,7 +424,13 @@ class InferenceIO(BaseModel):
         """The local location of the file"""
         return path / self.relative_path
 
-    def download(self, *, input_path: Path, s3_client: S3Client) -> None:
+    async def download(
+        self,
+        *,
+        input_path: Path,
+        semaphore: Semaphore,
+        s3_client: AsyncS3Client,
+    ) -> None:
         """Download this file from s3"""
         dest_file = self.local_file(path=input_path)
 
@@ -434,14 +441,15 @@ class InferenceIO(BaseModel):
         dest_file.parent.mkdir(exist_ok=True, parents=True)
 
         if self.decompress:
-            with TemporaryDirectory() as tmp_dir:
+            async with TemporaryDirectory() as tmp_dir:
                 zipfile = Path(tmp_dir) / "src.zip"
                 with zipfile.open("wb") as f:
-                    s3_client.download_fileobj(
-                        Bucket=self.bucket_name,
-                        Key=self.bucket_key,
-                        Fileobj=f,
-                    )
+                    async with semaphore:
+                        await s3_client.download_fileobj(
+                            Bucket=self.bucket_name,
+                            Key=self.bucket_key,
+                            Fileobj=f,
+                        )
                 try:
                     safe_extract(src=zipfile, dest=dest_file.parent)
                 except BadZipFile as error:
@@ -457,11 +465,12 @@ class InferenceIO(BaseModel):
                         raise error
         else:
             with dest_file.open("wb") as f:
-                s3_client.download_fileobj(
-                    Bucket=self.bucket_name,
-                    Key=self.bucket_key,
-                    Fileobj=f,
-                )
+                async with semaphore:
+                    await s3_client.download_fileobj(
+                        Bucket=self.bucket_name,
+                        Key=self.bucket_key,
+                        Fileobj=f,
+                    )
 
     def upload(self, *, output_path: Path, s3_client: S3Client) -> None:
         """Upload this file to s3"""
@@ -651,7 +660,9 @@ class InferenceTask(ProcUserMixin, BaseModel):
         logger.info(f"Invoking {self.pk=}")
 
         try:
-            inference_result = await self._invoke()
+            inference_result = await self._invoke(
+                semaphore=semaphore, s3_client=s3_client
+            )
             await self.upload_inference_result(
                 inference_result=inference_result,
                 s3_client=s3_client,
@@ -664,12 +675,16 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return inference_result
 
-    async def _invoke(self) -> InferenceResult:
+    async def _invoke(
+        self, *, semaphore: Semaphore, s3_client: AsyncS3Client
+    ) -> InferenceResult:
         try:
             self.reset_io()
 
             try:
-                self.download_input()
+                await self.download_input(
+                    semaphore=semaphore, s3_client=s3_client
+                )
             except ZipExtractionError as error:
                 self.log_external(level=logging.ERROR, msg=str(error))
                 return InferenceResult(pk=self.pk, return_code=1, outputs=[])
@@ -723,12 +738,19 @@ class InferenceTask(ProcUserMixin, BaseModel):
             )
             self.input_path.chmod(0o755)
 
-    def download_input(self) -> None:
+    async def download_input(
+        self, *, semaphore: Semaphore, s3_client: AsyncS3Client
+    ) -> None:
         """Download all the inputs to the input path"""
-        for input_file in self.inputs:
-            input_file.download(
-                input_path=self.input_path, s3_client=self._s3_client
-            )
+        async with asyncio.TaskGroup() as task_group:
+            for input_file in self.inputs:
+                task_group.create_task(
+                    input_file.download(
+                        input_path=self.input_path,
+                        semaphore=semaphore,
+                        s3_client=s3_client,
+                    )
+                )
 
     def upload_output(self) -> set[InferenceIO]:
         """Upload all the outputs from the output path to s3"""

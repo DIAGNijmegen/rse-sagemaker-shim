@@ -760,6 +760,7 @@ version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "aioboto3" },
+    { name = "aiofiles" },
     { name = "boto3" },
     { name = "click" },
     { name = "fastapi" },
@@ -780,11 +781,13 @@ dev = [
     { name = "pytest-xdist" },
     { name = "staticx", marker = "sys_platform == 'linux'" },
     { name = "types-aioboto3", extra = ["s3"] },
+    { name = "types-aiofiles" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "aioboto3" },
+    { name = "aiofiles", specifier = ">=25.1.0" },
     { name = "boto3" },
     { name = "click" },
     { name = "fastapi", specifier = "!=0.89.0" },
@@ -805,6 +808,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "staticx", marker = "sys_platform == 'linux'" },
     { name = "types-aioboto3", extras = ["s3"] },
+    { name = "types-aiofiles", specifier = ">=25.1.0.20251011" },
 ]
 
 [[package]]
@@ -897,6 +901,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/ca/84023d5468d9152c8dc8dc2bc01b4bf725fe2e2a23316b147b190b403399/types_aiobotocore_s3-2.24.3.tar.gz", hash = "sha256:77c6ebdb8829f1f93e2efbd486a92e88d92d61477e6e657aeac4df3be8113d58", size = 76356, upload-time = "2025-10-08T01:35:33.677Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/d8/a40dc4c6ec06f52279b254434a3b1258f43484220f2eb79ffca0e79b3c8c/types_aiobotocore_s3-2.24.3-py3-none-any.whl", hash = "sha256:0a00a26e6805fdbe55db5aa8ba273127b740d2106f00abdf6477990527daebe6", size = 83851, upload-time = "2025-10-08T01:35:32.604Z" },
+]
+
+[[package]]
+name = "types-aiofiles"
+version = "25.1.0.20251011"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/84/6c/6d23908a8217e36704aa9c79d99a620f2fdd388b66a4b7f72fbc6b6ff6c6/types_aiofiles-25.1.0.20251011.tar.gz", hash = "sha256:1c2b8ab260cb3cd40c15f9d10efdc05a6e1e6b02899304d80dfa0410e028d3ff", size = 14535, upload-time = "2025-10-11T02:44:51.237Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/0f/76917bab27e270bb6c32addd5968d69e558e5b6f7fb4ac4cbfa282996a96/types_aiofiles-25.1.0.20251011-py3-none-any.whl", hash = "sha256:8ff8de7f9d42739d8f0dadcceeb781ce27cd8d8c4152d4a7c52f6b20edb8149c", size = 14338, upload-time = "2025-10-11T02:44:50.054Z" },
 ]
 
 [[package]]
