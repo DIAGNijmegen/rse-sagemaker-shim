@@ -266,16 +266,18 @@ class ProcUserTarfile(ProcUserMixin, tarfile.TarFile):
             os.chown(path=targetpath, uid=uid, gid=gid)
 
 
-def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
+async def download_and_extract_tarball(
+    *, s3_uri: str, dest: Path, semaphore: Semaphore, s3_client: AsyncS3Client
+) -> None:
     s3_file = parse_s3_uri(s3_uri=s3_uri)
-    s3_client = get_s3_client()
 
     with SpooledTemporaryFile(max_size=4 * 1024 * 1024 * 1024) as f:
-        s3_client.download_fileobj(
-            Bucket=s3_file.bucket,
-            Key=s3_file.key,
-            Fileobj=f,
-        )
+        async with semaphore:
+            await s3_client.download_fileobj(
+                Bucket=s3_file.bucket,
+                Key=s3_file.key,
+                Fileobj=f,
+            )
 
         f.seek(0)
 
@@ -284,6 +286,10 @@ def download_and_extract_tarball(*, s3_uri: str, dest: Path) -> None:
 
 
 class AuxiliaryData:
+    def __init__(self, semaphore: Semaphore, s3_client: AsyncS3Client):
+        self._semaphore = semaphore
+        self._s3_client = s3_client
+
     @property
     def model_source(self) -> str | None:
         """s3 URI to a .tar.gz file that is extracted to model_dest"""
@@ -343,14 +349,17 @@ class AuxiliaryData:
         logger.debug(f"{post_clean_directories=}")
         return post_clean_directories
 
-    def __enter__(self) -> "AuxiliaryData":
+    async def __aenter__(self) -> "AuxiliaryData":
         logger.info("Setting up Auxiliary Data")
         self.ensure_directories_are_writable()
-        self.download_model()
-        self.download_ground_truth()
+
+        async with asyncio.TaskGroup() as task_group:
+            task_group.create_task(self.download_model())
+            task_group.create_task(self.download_ground_truth())
+
         return self
 
-    def __exit__(
+    async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
@@ -367,25 +376,31 @@ class AuxiliaryData:
             path.mkdir(exist_ok=True, parents=True)
             path.chmod(mode=0o777)
 
-    def download_model(self) -> None:
+    async def download_model(self) -> None:
         if self.model_source is not None:
             logger.info(
                 f"Downloading model from {self.model_source=} to {self.model_dest=}"
             )
             self.model_dest.mkdir(parents=True, exist_ok=True)
-            download_and_extract_tarball(
-                s3_uri=self.model_source, dest=self.model_dest
+            await download_and_extract_tarball(
+                s3_uri=self.model_source,
+                dest=self.model_dest,
+                semaphore=self._semaphore,
+                s3_client=self._s3_client,
             )
 
-    def download_ground_truth(self) -> None:
+    async def download_ground_truth(self) -> None:
         if self.ground_truth_source is not None:
             logger.info(
                 f"Downloading ground truth from {self.ground_truth_source=} "
                 f"to {self.ground_truth_dest=}"
             )
             self.ground_truth_dest.mkdir(parents=True, exist_ok=True)
-            download_and_extract_tarball(
-                s3_uri=self.ground_truth_source, dest=self.ground_truth_dest
+            await download_and_extract_tarball(
+                s3_uri=self.ground_truth_source,
+                dest=self.ground_truth_dest,
+                semaphore=self._semaphore,
+                s3_client=self._s3_client,
             )
 
 

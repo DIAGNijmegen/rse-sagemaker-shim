@@ -15,6 +15,7 @@ from sagemaker_shim.models import (
     ProcUserMixin,
     ProcUserTarfile,
     get_s3_client,
+    s3_resources,
     validate_bucket_name,
 )
 
@@ -285,7 +286,8 @@ def test_home_is_set(monkeypatch):
     assert t.proc_env["HOME"] == pwd.getpwnam("root").pw_dir
 
 
-def test_model_and_ground_truth_extraction(
+@pytest.mark.asyncio
+async def test_model_and_ground_truth_extraction(
     minio, monkeypatch, tmp_path, mocker, algorithm_model
 ):
     s3_client = get_s3_client()
@@ -342,12 +344,13 @@ def test_model_and_ground_truth_extraction(
 
     spy = mocker.spy(ProcUserTarfile, "chown")
 
-    with AuxiliaryData():
-        downloaded_files = {
-            str(f.relative_to(tmp_path))
-            for f in tmp_path.rglob("**/*")
-            if f.is_file()
-        }
+    async with s3_resources() as (semaphore, s3_client):
+        async with AuxiliaryData(semaphore=semaphore, s3_client=s3_client):
+            downloaded_files = {
+                str(f.relative_to(tmp_path))
+                for f in tmp_path.rglob("**/*")
+                if f.is_file()
+            }
 
     assert downloaded_files == {
         "model/model-file1.txt",
@@ -366,18 +369,25 @@ def test_model_and_ground_truth_extraction(
     assert spy.call_count == 4
 
 
-def test_ensure_directories_are_writable_unset():
-    with AuxiliaryData() as d:
-        assert d.writable_directories == []
-        assert d.post_clean_directories == []
-        assert d.model_source is None
-        assert d.model_dest == Path("/opt/ml/model")
-        assert not d.model_dest.exists()
-        assert d.ground_truth_source is None
-        assert d.ground_truth_dest == Path("/opt/ml/input/data/ground_truth")
-        assert not d.ground_truth_dest.exists()
+@pytest.mark.asyncio
+async def test_ensure_directories_are_writable_unset():
+    async with s3_resources() as (semaphore, s3_client):
+        async with AuxiliaryData(
+            semaphore=semaphore, s3_client=s3_client
+        ) as d:
+            assert d.writable_directories == []
+            assert d.post_clean_directories == []
+            assert d.model_source is None
+            assert d.model_dest == Path("/opt/ml/model")
+            assert not d.model_dest.exists()
+            assert d.ground_truth_source is None
+            assert d.ground_truth_dest == Path(
+                "/opt/ml/input/data/ground_truth"
+            )
+            assert not d.ground_truth_dest.exists()
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "directories,expected",
     (
@@ -386,7 +396,7 @@ def test_ensure_directories_are_writable_unset():
         ("::", []),
     ),
 )
-def test_ensure_directories_are_writable_set(
+async def test_ensure_directories_are_writable_set(
     monkeypatch, directories, expected
 ):
     monkeypatch.setenv(
@@ -394,11 +404,15 @@ def test_ensure_directories_are_writable_set(
         directories,
     )
 
-    d = AuxiliaryData()
-    assert d.writable_directories == expected
+    async with s3_resources() as (semaphore, s3_client):
+        async with AuxiliaryData(
+            semaphore=semaphore, s3_client=s3_client
+        ) as d:
+            assert d.writable_directories == expected
 
 
-def test_ensure_directories_are_writable(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_ensure_directories_are_writable(tmp_path, monkeypatch):
     data = tmp_path / "opt" / "ml" / "output" / "data"
     data.mkdir(mode=0o755, parents=True)
 
@@ -416,8 +430,9 @@ def test_ensure_directories_are_writable(tmp_path, monkeypatch):
         f"{data.absolute()}:{model.absolute()}:{checkpoints.absolute()}:{tmp.absolute()}",
     )
 
-    with AuxiliaryData():
-        pass
+    async with s3_resources() as (semaphore, s3_client):
+        async with AuxiliaryData(semaphore=semaphore, s3_client=s3_client):
+            pass
 
     assert data.stat().st_mode == 0o40777
     assert model.stat().st_mode == 0o40777

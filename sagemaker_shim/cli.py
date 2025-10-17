@@ -44,20 +44,22 @@ def cli() -> None:
 
 
 @cli.command(short_help="Start the model server")
-def serve() -> None:
+@async_to_sync
+async def serve() -> None:
     logger.info("Starting the model server")
 
-    with AuxiliaryData():
-        uvicorn.run(
-            app=app,
-            host="0.0.0.0",
-            port=8080,
-            log_config=None,
-            workers=1,
-            # uvloop does not accept the user or group parameters
-            # to subprocess so force using asyncio
-            loop="asyncio",
-        )
+    async with s3_resources() as (semaphore, s3_client):
+        async with AuxiliaryData(semaphore=semaphore, s3_client=s3_client):
+            uvicorn.run(
+                app=app,
+                host="0.0.0.0",
+                port=8080,
+                log_config=None,
+                workers=1,
+                # uvloop does not accept the user or group parameters
+                # to subprocess so force using asyncio
+                loop="asyncio",
+            )
 
     logger.info("Model server stopped")
 
@@ -108,7 +110,7 @@ async def invoke(tasks: str, file: str) -> None:
             ) from error
 
         if parsed_tasks.root:
-            with AuxiliaryData():
+            async with AuxiliaryData(semaphore=semaphore, s3_client=s3_client):
                 for task in parsed_tasks.root:
                     # Only run one task at a time
                     await task.invoke(semaphore=semaphore, s3_client=s3_client)
