@@ -1,7 +1,10 @@
+import hashlib
+import hmac
 import io
 import json
 import logging.config
 import os
+import secrets
 from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
@@ -332,6 +335,55 @@ async def test_inference_result_upload(
     assert direct_invocation == InferenceResult(
         **json.loads(serialised_invocation.read().decode("utf-8"))
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cmd,expected_return_code",
+    (
+        (["echo", "hello"], 0),
+        (["bash", "-c", "exit 1"], 1),
+    ),
+)
+async def test_inference_result_signed(
+    minio, tmp_path, monkeypatch, cmd, expected_return_code
+):
+    pk = str(uuid4())
+    signing_key = secrets.token_hex(32)
+    prefix = f"tasks/{pk}"
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=str(prefix),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY", signing_key)
+
+    direct_invocation = await task.invoke()
+
+    assert direct_invocation.return_code == expected_return_code
+    assert direct_invocation.pk == pk
+
+    serialised_invocation = io.BytesIO()
+    response = task._s3_client.get_object(
+        Bucket=minio.output_bucket_name,
+        Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
+    )
+    serialised_invocation.seek(0)
+
+    data = response["Body"].read()
+    meta_sig = response["Metadata"]["signature_hmac_sha256"]
+    calc = hmac.new(
+        key=signing_key.encode("utf-8"), msg=data, digestmod=hashlib.sha256
+    ).hexdigest()
+    assert hmac.compare_digest(calc, meta_sig)
 
 
 def test_folder_cleanup(tmp_path):
