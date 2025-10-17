@@ -92,7 +92,7 @@ def test_removing_ld_library_path(monkeypatch):
 
 
 def test_all_grand_challenge_env_vars_removed(monkeypatch):
-    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY", "somekey")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", "somekey")
     monkeypatch.setenv("grand_challenge_foo", "bar")
 
     t = InferenceTask(
@@ -101,9 +101,9 @@ def test_all_grand_challenge_env_vars_removed(monkeypatch):
 
     env = os.environ.copy()
 
-    assert env["GRAND_CHALLENGE_COMPONENT_SIGNING_KEY"] == "somekey"
+    assert env["GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX"] == "somekey"
     assert env["grand_challenge_foo"] == "bar"
-    assert "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY" not in t.proc_env
+    assert "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX" not in t.proc_env
     assert "grand_challenge_foo" not in t.proc_env
 
 

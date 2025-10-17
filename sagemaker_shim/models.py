@@ -700,9 +700,9 @@ class InferenceTask(ProcUserMixin, BaseModel):
     ) -> None:
         content = inference_result.model_dump_json().encode("utf-8")
         signature = hmac.new(
-            key=os.environ.get(
-                "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY", ""
-            ).encode("utf-8"),
+            key=bytes.fromhex(
+                os.environ.get("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", "")
+            ),
             msg=content,
             digestmod=hashlib.sha256,
         ).hexdigest()
@@ -737,6 +737,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,
+            shell=False,
+            close_fds=True,
         )
 
         try:

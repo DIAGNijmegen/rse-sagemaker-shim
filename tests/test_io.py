@@ -349,7 +349,7 @@ async def test_inference_result_signed(
     minio, tmp_path, monkeypatch, cmd, expected_return_code
 ):
     pk = str(uuid4())
-    signing_key = secrets.token_hex(32)
+    signing_key = secrets.token_hex()
     prefix = f"tasks/{pk}"
     task = InferenceTask(
         pk=pk,
@@ -364,26 +364,36 @@ async def test_inference_result_signed(
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
-    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY", signing_key)
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", signing_key
+    )
 
     direct_invocation = await task.invoke()
 
     assert direct_invocation.return_code == expected_return_code
     assert direct_invocation.pk == pk
 
-    serialised_invocation = io.BytesIO()
     response = task._s3_client.get_object(
         Bucket=minio.output_bucket_name,
         Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
     )
-    serialised_invocation.seek(0)
 
     data = response["Body"].read()
     meta_sig = response["Metadata"]["signature_hmac_sha256"]
+
+    assert direct_invocation == InferenceResult(
+        **json.loads(data.decode("utf-8"))
+    )
+
     calc = hmac.new(
-        key=signing_key.encode("utf-8"), msg=data, digestmod=hashlib.sha256
+        key=bytes.fromhex(signing_key), msg=data, digestmod=hashlib.sha256
     ).hexdigest()
-    assert hmac.compare_digest(calc, meta_sig)
+    assert secrets.compare_digest(calc, meta_sig)
+
+    calc = hmac.new(
+        key=b"different-key-used", msg=data, digestmod=hashlib.sha256
+    ).hexdigest()
+    assert not secrets.compare_digest(calc, meta_sig)
 
 
 def test_folder_cleanup(tmp_path):
