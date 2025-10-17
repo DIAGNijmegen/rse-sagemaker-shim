@@ -21,7 +21,7 @@ import logging
 
 from fastapi import FastAPI, Response, status
 
-from sagemaker_shim.models import InferenceResult, InferenceTask
+from sagemaker_shim.models import InferenceResult, InferenceTask, s3_resources
 
 logger = logging.getLogger(__name__)
 
@@ -51,4 +51,5 @@ async def invocations(task: InferenceTask) -> InferenceResult:
     logger.debug("invcations called")
     logger.debug(f"{task=}")
 
-    return await task.invoke()
+    async with s3_resources() as (semaphore, s3_client):
+        return await task.invoke(semaphore=semaphore, s3_client=s3_client)

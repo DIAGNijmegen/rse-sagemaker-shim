@@ -1,18 +1,18 @@
-import asyncio
 import io
 import json
-import os
 import resource
 from unittest.mock import patch
 from uuid import uuid4
 
-import aioboto3
 import pytest
-from botocore.config import Config
 from click.testing import CliRunner
 
 from sagemaker_shim.cli import async_to_sync, cli
-from sagemaker_shim.models import get_s3_client, get_s3_file_content
+from sagemaker_shim.models import (
+    get_s3_client,
+    get_s3_file_content,
+    s3_resources,
+)
 from tests.utils import encode_b64j
 
 
@@ -77,36 +77,16 @@ def test_invoke_bad_bucket(minio):
 
 
 def sync_s3_operation(*, method, **kwargs):
-    semaphore = asyncio.Semaphore(
-        int(
-            os.environ.get("GRAND_CHALLENGE_COMPONENT_ASYNC_CONCURRENCY", "50")
-        )
-    )
-    session = aioboto3.Session()
-    boto_config = Config(
-        max_pool_connections=int(
-            os.environ.get(
-                "GRAND_CHALLENGE_COMPONENT_BOTO_MAX_POOL_CONNECTIONS", "120"
-            )
-        )
-    )
-
     @async_to_sync
     async def _run():
-        async with semaphore:
-            async with session.client(
-                "s3",
-                endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL"),
-                config=boto_config,
-            ) as s3_client:
-                return await method(
-                    **kwargs, semaphore=semaphore, s3_client=s3_client
-                )
+        async with s3_resources() as (semaphore, s3_client):
+            return await method(
+                **kwargs, semaphore=semaphore, s3_client=s3_client
+            )
 
     return _run()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "cmd,expected_return_code",
     (

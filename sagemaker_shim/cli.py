@@ -8,10 +8,8 @@ from functools import wraps
 from json import JSONDecodeError
 from typing import Any, TypeVar
 
-import aioboto3
 import click
 import uvicorn
-from botocore.config import Config
 from botocore.exceptions import ClientError, NoCredentialsError
 from pydantic import ValidationError
 
@@ -21,6 +19,7 @@ from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceTaskList,
     get_s3_file_content,
+    s3_resources,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,27 +81,9 @@ def serve() -> None:
 async def invoke(tasks: str, file: str) -> None:
     logger.info("Invoking the model")
 
-    semaphore = asyncio.Semaphore(
-        int(
-            os.environ.get("GRAND_CHALLENGE_COMPONENT_ASYNC_CONCURRENCY", "50")
-        )
-    )
-    session = aioboto3.Session()
-    boto_config = Config(
-        max_pool_connections=int(
-            os.environ.get(
-                "GRAND_CHALLENGE_COMPONENT_BOTO_MAX_POOL_CONNECTIONS", "120"
-            )
-        )
-    )
-
     tasks_json: str | bytes
 
-    async with session.client(
-        "s3",
-        endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL"),
-        config=boto_config,
-    ) as s3_client:
+    async with s3_resources() as (semaphore, s3_client):
         if tasks and file:
             raise click.UsageError("Only one of tasks or file should be set")
         elif tasks:
@@ -130,7 +111,7 @@ async def invoke(tasks: str, file: str) -> None:
             with AuxiliaryData():
                 for task in parsed_tasks.root:
                     # Only run one task at a time
-                    await task.invoke()
+                    await task.invoke(semaphore=semaphore, s3_client=s3_client)
         else:
             raise click.UsageError("Empty task list provided")
 

@@ -13,6 +13,8 @@ import subprocess
 import tarfile
 from asyncio import Semaphore
 from base64 import b64decode
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
@@ -21,7 +23,9 @@ from types import TracebackType
 from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
+import aioboto3
 import boto3
+from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
 from sagemaker_shim.exceptions import ZipExtractionError
@@ -171,6 +175,30 @@ def get_s3_client() -> S3Client:
     )
 
 
+@asynccontextmanager
+async def s3_resources() -> AsyncIterator[tuple[Semaphore, AsyncS3Client]]:
+    semaphore = asyncio.Semaphore(
+        int(
+            os.environ.get("GRAND_CHALLENGE_COMPONENT_ASYNC_CONCURRENCY", "50")
+        )
+    )
+    session = aioboto3.Session()
+    boto_config = Config(
+        max_pool_connections=int(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_BOTO_MAX_POOL_CONNECTIONS", "120"
+            )
+        )
+    )
+
+    async with session.client(
+        "s3",
+        endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL"),
+        config=boto_config,
+    ) as s3_client:
+        yield semaphore, s3_client
+
+
 def parse_s3_uri(*, s3_uri: str) -> S3File:
     pattern = r"^(https|s3)://(?P<bucket>[^/]+)/?(?P<key>.*)$"
     match = re.fullmatch(pattern, s3_uri)
@@ -182,7 +210,7 @@ def parse_s3_uri(*, s3_uri: str) -> S3File:
 
 
 async def get_s3_file_content(
-    *, s3_uri: str, s3_client: AsyncS3Client, semaphore: Semaphore
+    *, s3_uri: str, semaphore: Semaphore, s3_client: AsyncS3Client
 ) -> bytes:
     s3_file = parse_s3_uri(s3_uri=s3_uri)
 
@@ -597,7 +625,9 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return env
 
-    async def invoke(self) -> InferenceResult:
+    async def invoke(
+        self, semaphore: Semaphore, s3_client: AsyncS3Client
+    ) -> InferenceResult:
         """Run the inference on a single case"""
         logger.info(f"Awaiting lock for {self.pk=}")
 
@@ -607,7 +637,11 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         try:
             inference_result = await self._invoke()
-            self.upload_inference_result(inference_result=inference_result)
+            await self.upload_inference_result(
+                inference_result=inference_result,
+                s3_client=s3_client,
+                semaphore=semaphore,
+            )
         finally:
             lock.release()
 
@@ -703,8 +737,12 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return outputs
 
-    def upload_inference_result(
-        self, *, inference_result: InferenceResult
+    async def upload_inference_result(
+        self,
+        *,
+        inference_result: InferenceResult,
+        semaphore: Semaphore,
+        s3_client: AsyncS3Client,
     ) -> None:
         content = inference_result.model_dump_json().encode("utf-8")
         signature = hmac.new(
@@ -724,14 +762,15 @@ class InferenceTask(ProcUserMixin, BaseModel):
             f"{self.output_bucket_name=} with {inference_result=}"
         )
 
-        self._s3_client.upload_fileobj(
-            Fileobj=io.BytesIO(content),
-            Bucket=self.output_bucket_name,
-            Key=bucket_key,
-            ExtraArgs={
-                "Metadata": {"signature_hmac_sha256": signature},
-            },
-        )
+        async with semaphore:
+            await s3_client.upload_fileobj(
+                Fileobj=io.BytesIO(content),
+                Bucket=self.output_bucket_name,
+                Key=bucket_key,
+                ExtraArgs={
+                    "Metadata": {"signature_hmac_sha256": signature},
+                },
+            )
 
     async def execute(self) -> int:
         """Run the original entrypoint and command in a subprocess"""

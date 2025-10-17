@@ -18,6 +18,7 @@ from sagemaker_shim.models import (
     InferenceTask,
     clean_path,
     get_s3_client,
+    s3_resources,
 )
 from tests.utils import encode_b64j
 
@@ -319,7 +320,10 @@ async def test_inference_result_upload(
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
 
-    direct_invocation = await task.invoke()
+    async with s3_resources() as (semaphore, s3_client):
+        direct_invocation = await task.invoke(
+            semaphore=semaphore, s3_client=s3_client
+        )
 
     assert direct_invocation.return_code == expected_return_code
     assert direct_invocation.pk == pk
@@ -368,7 +372,10 @@ async def test_inference_result_signed(
         "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", signing_key
     )
 
-    direct_invocation = await task.invoke()
+    async with s3_resources() as (semaphore, s3_client):
+        direct_invocation = await task.invoke(
+            semaphore=semaphore, s3_client=s3_client
+        )
 
     assert direct_invocation.return_code == expected_return_code
     assert direct_invocation.pk == pk

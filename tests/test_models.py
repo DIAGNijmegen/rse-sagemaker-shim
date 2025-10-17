@@ -448,10 +448,11 @@ def test_reset_linked_input(tmp_path, monkeypatch):
     linked_input_parent = tmp_path / "linked-input"
 
     monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH", input_path.absolute()
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH", str(input_path.absolute())
     )
     monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT", linked_input_parent
+        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
+        str(linked_input_parent),
     )
 
     t = InferenceTask(
