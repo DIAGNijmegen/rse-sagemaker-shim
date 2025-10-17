@@ -14,7 +14,6 @@ from sagemaker_shim.models import (
     InferenceTask,
     ProcUserMixin,
     ProcUserTarfile,
-    get_s3_client,
     s3_resources,
     validate_bucket_name,
 )
@@ -290,14 +289,7 @@ def test_home_is_set(monkeypatch):
 async def test_model_and_ground_truth_extraction(
     minio, monkeypatch, tmp_path, mocker, algorithm_model
 ):
-    s3_client = get_s3_client()
-
     model_pk = str(uuid4())
-
-    s3_client.upload_fileobj(
-        algorithm_model, minio.input_bucket_name, f"{model_pk}/model.tar.gz"
-    )
-
     ground_truth_pk = str(uuid4())
 
     ground_truth_f = io.BytesIO()
@@ -312,12 +304,6 @@ async def test_model_and_ground_truth_extraction(
         tar.addfile(file_info, io.BytesIO(content))
 
     ground_truth_f.seek(0)
-
-    s3_client.upload_fileobj(
-        ground_truth_f,
-        minio.input_bucket_name,
-        f"{ground_truth_pk}/ground_truth.tar.gz",
-    )
 
     model_destination = tmp_path / "model"
     ground_truth_destination = tmp_path / "ground_truth"
@@ -345,6 +331,18 @@ async def test_model_and_ground_truth_extraction(
     spy = mocker.spy(ProcUserTarfile, "chown")
 
     async with s3_resources() as (semaphore, s3_client):
+        async with semaphore:
+            await s3_client.upload_fileobj(
+                algorithm_model,
+                minio.input_bucket_name,
+                f"{model_pk}/model.tar.gz",
+            )
+            await s3_client.upload_fileobj(
+                ground_truth_f,
+                minio.input_bucket_name,
+                f"{ground_truth_pk}/ground_truth.tar.gz",
+            )
+
         async with AuxiliaryData(semaphore=semaphore, s3_client=s3_client):
             downloaded_files = {
                 str(f.relative_to(tmp_path))

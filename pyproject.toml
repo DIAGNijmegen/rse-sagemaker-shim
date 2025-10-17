@@ -8,9 +8,9 @@ dependencies = [
     "fastapi!=0.89.0",
     "uvicorn",
     "click",
-    "boto3",
     "aioboto3",
     "aiofiles",
+    "botocore",
 ]
 name = "sagemaker-shim"
 version = "0.4.0"

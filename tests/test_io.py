@@ -17,7 +17,6 @@ from sagemaker_shim.models import (
     InferenceResult,
     InferenceTask,
     clean_path,
-    get_s3_client,
     s3_resources,
 )
 from tests.utils import encode_b64j
@@ -140,8 +139,10 @@ async def test_input_decompress(minio, tmp_path, monkeypatch):
     assert created_sub == str(pk)
 
 
-def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
-    s3_client = get_s3_client()
+@pytest.mark.asyncio
+async def test_invoke_with_dodgy_file(
+    client, minio, tmp_path, monkeypatch, capsys
+):
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {
@@ -170,9 +171,12 @@ def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
         zip.writestr("../foo.txt", "hello!")
         zip.writestr("../../foo.txt", "hello!")
     sub_f.seek(0)
-    s3_client.upload_fileobj(
-        sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
-    )
+
+    async with s3_resources() as (semaphore, s3_client):
+        async with semaphore:
+            await s3_client.upload_fileobj(
+                sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
+            )
 
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
@@ -193,8 +197,10 @@ def test_invoke_with_dodgy_file(client, minio, tmp_path, monkeypatch, capsys):
     )
 
 
-def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
-    s3_client = get_s3_client()
+@pytest.mark.asyncio
+async def test_invoke_with_non_zip(
+    client, minio, tmp_path, monkeypatch, capsys
+):
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     data = {
@@ -221,9 +227,12 @@ def test_invoke_with_non_zip(client, minio, tmp_path, monkeypatch, capsys):
     sub_data = os.urandom(8)
     sub_f = io.BytesIO(sub_data)
     sub_f.seek(0)
-    s3_client.upload_fileobj(
-        sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
-    )
+
+    async with s3_resources() as (semaphore, s3_client):
+        async with semaphore:
+            await s3_client.upload_fileobj(
+                sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
+            )
 
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",

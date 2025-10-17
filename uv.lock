@@ -761,7 +761,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aioboto3" },
     { name = "aiofiles" },
-    { name = "boto3" },
+    { name = "botocore" },
     { name = "click" },
     { name = "fastapi" },
     { name = "uvicorn" },
@@ -787,8 +787,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aioboto3" },
-    { name = "aiofiles", specifier = ">=25.1.0" },
-    { name = "boto3" },
+    { name = "aiofiles" },
+    { name = "botocore" },
     { name = "click" },
     { name = "fastapi", specifier = "!=0.89.0" },
     { name = "uvicorn" },
@@ -808,7 +808,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "staticx", marker = "sys_platform == 'linux'" },
     { name = "types-aioboto3", extras = ["s3"] },
-    { name = "types-aiofiles", specifier = ">=25.1.0.20251011" },
+    { name = "types-aiofiles" },
 ]
 
 [[package]]

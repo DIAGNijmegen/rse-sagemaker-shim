@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
 import aioboto3
-import boto3
 from aiofiles.tempfile import TemporaryDirectory
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
@@ -35,12 +34,10 @@ from sagemaker_shim.logging import STDOUT_LEVEL
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath  # pragma: no cover
-    from mypy_boto3_s3 import S3Client  # pragma: no cover
     from types_aiobotocore_s3.client import (
         S3Client as AsyncS3Client,  # pragma: no cover
     )
 else:
-    S3Client = object
     StrOrBytesPath = object
     AsyncS3Client = object
 
@@ -168,12 +165,6 @@ def clean_path(path: Path) -> None:
 class S3File(NamedTuple):
     bucket: str
     key: str
-
-
-def get_s3_client() -> S3Client:
-    return boto3.client(
-        "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-    )
 
 
 @asynccontextmanager

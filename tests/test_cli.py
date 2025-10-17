@@ -9,7 +9,6 @@ from click.testing import CliRunner
 
 from sagemaker_shim.cli import async_to_sync, cli
 from sagemaker_shim.models import (
-    get_s3_client,
     get_s3_file_content,
     s3_resources,
 )
@@ -74,6 +73,11 @@ def test_invoke_bad_bucket(minio):
         "An error occurred (404) when calling the HeadObject operation: Not Found"
         in result.output
     )
+
+
+async def s3_upload_fileobj(*args, semaphore, s3_client, **kwargs):
+    async with semaphore:
+        await s3_client.upload_fileobj(*args, **kwargs)
 
 
 def sync_s3_operation(*, method, **kwargs):
@@ -167,8 +171,8 @@ def test_inference_from_s3_uri(minio, monkeypatch, cmd, expected_return_code):
 
     definition_key = f"{uuid4()}/invocations.json"
 
-    s3_client = get_s3_client()
-    s3_client.upload_fileobj(
+    sync_s3_operation(
+        method=s3_upload_fileobj,
         Fileobj=io.BytesIO(json.dumps(tasks).encode("utf-8")),
         Bucket=minio.input_bucket_name,
         Key=definition_key,
