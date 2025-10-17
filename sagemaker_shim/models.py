@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 else:
     S3Client = object
     StrOrBytesPath = object
+    AsyncS3Client = object
 
 
 logger = logging.getLogger(__name__)
