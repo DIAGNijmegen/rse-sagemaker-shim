@@ -472,7 +472,13 @@ class InferenceIO(BaseModel):
                         Fileobj=f,
                     )
 
-    def upload(self, *, output_path: Path, s3_client: S3Client) -> None:
+    async def upload(
+        self,
+        *,
+        output_path: Path,
+        semaphore: Semaphore,
+        s3_client: AsyncS3Client,
+    ) -> None:
         """Upload this file to s3"""
         src_file = str(self.local_file(path=output_path))
 
@@ -480,11 +486,12 @@ class InferenceIO(BaseModel):
             f"Uploading {src_file=} to {self.bucket_name=} with {self.bucket_key=}"
         )
 
-        s3_client.upload_file(
-            Filename=src_file,
-            Bucket=self.bucket_name,
-            Key=self.bucket_key,
-        )
+        async with semaphore:
+            await s3_client.upload_file(
+                Filename=src_file,
+                Bucket=self.bucket_name,
+                Key=self.bucket_key,
+            )
 
 
 class InferenceResult(BaseModel):
@@ -591,10 +598,6 @@ class InferenceTask(ProcUserMixin, BaseModel):
         else:
             return None
 
-    @cached_property
-    def _s3_client(self) -> S3Client:
-        return get_s3_client()
-
     @property
     def proc_args(self) -> list[str]:
         """
@@ -692,7 +695,9 @@ class InferenceTask(ProcUserMixin, BaseModel):
             return_code = await self.execute()
 
             if return_code == 0:
-                outputs = self.upload_output()
+                outputs = await self.upload_output(
+                    semaphore=semaphore, s3_client=s3_client
+                )
             else:
                 outputs = set()
 
@@ -752,25 +757,32 @@ class InferenceTask(ProcUserMixin, BaseModel):
                     )
                 )
 
-    def upload_output(self) -> set[InferenceIO]:
+    async def upload_output(
+        self, *, semaphore: Semaphore, s3_client: AsyncS3Client
+    ) -> set[InferenceIO]:
         """Upload all the outputs from the output path to s3"""
         output_path = self.output_path
         outputs: set[InferenceIO] = set()
 
-        for f in output_path.rglob("**/*"):
-            if not f.is_file() and not f.is_symlink():
-                logger.warning(f"Skipping {f=}")
-            else:
-                relative_path = f.relative_to(output_path)
-                output = InferenceIO(
-                    relative_path=relative_path,
-                    bucket_key=f"{self.output_prefix}{relative_path}",
-                    bucket_name=self.output_bucket_name,
-                )
-                output.upload(
-                    output_path=self.output_path, s3_client=self._s3_client
-                )
-                outputs.add(output)
+        async with asyncio.TaskGroup() as task_group:
+            for f in output_path.rglob("**/*"):
+                if not f.is_file() and not f.is_symlink():
+                    logger.warning(f"Skipping {f=}")
+                else:
+                    relative_path = f.relative_to(output_path)
+                    output = InferenceIO(
+                        relative_path=relative_path,
+                        bucket_key=f"{self.output_prefix}{relative_path}",
+                        bucket_name=self.output_bucket_name,
+                    )
+                    task_group.create_task(
+                        output.upload(
+                            output_path=self.output_path,
+                            semaphore=semaphore,
+                            s3_client=s3_client,
+                        )
+                    )
+                    outputs.add(output)
 
         return outputs
 
