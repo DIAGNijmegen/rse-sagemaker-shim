@@ -680,11 +680,14 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 await self.download_input(
                     semaphore=semaphore, s3_client=s3_client
                 )
-            except ExceptionGroup as eg:
-                zip_group, rest = eg.split(ZipExtractionError)
+            except ExceptionGroup as exception_group:
+                zip_group, rest = exception_group.split(ZipExtractionError)
+
                 if zip_group:
-                    for e in zip_group.exceptions:
-                        self.log_external(level=logging.ERROR, msg=str(e))
+                    for exception in zip_group.exceptions:
+                        self.log_external(
+                            level=logging.ERROR, msg=str(exception)
+                        )
                     return InferenceResult(
                         pk=self.pk, return_code=1, outputs=[]
                     )
