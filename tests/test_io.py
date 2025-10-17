@@ -57,18 +57,17 @@ async def test_input_download(minio, tmp_path, monkeypatch):
     sub_f = io.BytesIO(sub_data)
 
     async with s3_resources() as (semaphore, s3_client):
-        await s3_client.upload_fileobj(
-            root_f, minio.input_bucket_name, f"{prefix}/root.bin"
-        )
-
-        await s3_client.upload_fileobj(
-            sub_f, minio.input_bucket_name, f"{prefix}/sub/dir.bin"
-        )
-
-        response = await s3_client.list_objects_v2(
-            Bucket=minio.input_bucket_name,
-            Prefix=prefix,
-        )
+        async with semaphore:
+            await s3_client.upload_fileobj(
+                root_f, minio.input_bucket_name, f"{prefix}/root.bin"
+            )
+            await s3_client.upload_fileobj(
+                sub_f, minio.input_bucket_name, f"{prefix}/sub/dir.bin"
+            )
+            response = await s3_client.list_objects_v2(
+                Bucket=minio.input_bucket_name,
+                Prefix=prefix,
+            )
 
         await task.download_input(semaphore=semaphore, s3_client=s3_client)
 
@@ -117,14 +116,14 @@ async def test_input_decompress(minio, tmp_path, monkeypatch):
     sub_f.seek(0)
 
     async with s3_resources() as (semaphore, s3_client):
-        await s3_client.upload_fileobj(
-            sub_f, minio.input_bucket_name, f"{prefix}/sub/predictions.zip"
-        )
-
-        response = await s3_client.list_objects_v2(
-            Bucket=minio.input_bucket_name,
-            Prefix=prefix,
-        )
+        async with semaphore:
+            await s3_client.upload_fileobj(
+                sub_f, minio.input_bucket_name, f"{prefix}/sub/predictions.zip"
+            )
+            response = await s3_client.list_objects_v2(
+                Bucket=minio.input_bucket_name,
+                Prefix=prefix,
+            )
 
         await task.download_input(semaphore=semaphore, s3_client=s3_client)
 

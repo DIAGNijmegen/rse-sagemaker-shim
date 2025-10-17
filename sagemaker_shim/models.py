@@ -456,13 +456,12 @@ class InferenceIO(BaseModel):
                     else:
                         raise error
         else:
-            with dest_file.open("wb") as f:
-                async with semaphore:
-                    await s3_client.download_fileobj(
-                        Bucket=self.bucket_name,
-                        Key=self.bucket_key,
-                        Fileobj=f,
-                    )
+            async with semaphore:
+                await s3_client.download_file(
+                    Bucket=self.bucket_name,
+                    Key=self.bucket_key,
+                    Filename=dest_file,
+                )
 
     async def upload(
         self,
