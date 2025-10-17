@@ -91,6 +91,22 @@ def test_removing_ld_library_path(monkeypatch):
     assert env["LD_LIBRARY_PATH"] == "present"
 
 
+def test_all_grand_challenge_env_vars_removed(monkeypatch):
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", "somekey")
+    monkeypatch.setenv("grand_challenge_foo", "bar")
+
+    t = InferenceTask(
+        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+    )
+
+    env = os.environ.copy()
+
+    assert env["GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX"] == "somekey"
+    assert env["grand_challenge_foo"] == "bar"
+    assert "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX" not in t.proc_env
+    assert "grand_challenge_foo" not in t.proc_env
+
+
 ROOT_HOME = pwd.getpwnam("root").pw_dir
 ROOT_GROUPS = ProcUserMixin._get_users_groups(user=pwd.getpwnam("root"))
 USER_HOME = os.path.expanduser("~")

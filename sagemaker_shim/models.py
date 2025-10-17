@@ -1,6 +1,8 @@
 import asyncio
 import errno
 import grp
+import hashlib
+import hmac
 import io
 import json
 import logging
@@ -566,7 +568,11 @@ class InferenceTask(ProcUserMixin, BaseModel):
     @property
     def proc_env(self) -> dict[str, str]:
         """The environment for the subprocess"""
-        env = os.environ.copy()
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.casefold().startswith("grand_challenge_")
+        }
 
         # Set LD_LIBRARY_PATH correctly, see
         # https://pyinstaller.org/en/stable/runtime-information.html#ld-library-path-libpath-considerations
@@ -692,9 +698,15 @@ class InferenceTask(ProcUserMixin, BaseModel):
     def upload_inference_result(
         self, *, inference_result: InferenceResult
     ) -> None:
-        fileobj = io.BytesIO(
-            inference_result.model_dump_json().encode("utf-8")
-        )
+        content = inference_result.model_dump_json().encode("utf-8")
+        signature = hmac.new(
+            key=bytes.fromhex(
+                os.environ.get("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", "")
+            ),
+            msg=content,
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+
         bucket_key = (
             f"{self.output_prefix}.sagemaker_shim/inference_result.json"
         )
@@ -705,9 +717,12 @@ class InferenceTask(ProcUserMixin, BaseModel):
         )
 
         self._s3_client.upload_fileobj(
-            Fileobj=fileobj,
+            Fileobj=io.BytesIO(content),
             Bucket=self.output_bucket_name,
             Key=bucket_key,
+            ExtraArgs={
+                "Metadata": {"signature_hmac_sha256": signature},
+            },
         )
 
     async def execute(self) -> int:
@@ -722,6 +737,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,
+            shell=False,
+            close_fds=True,
         )
 
         try:
