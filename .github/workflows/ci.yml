@@ -38,7 +38,7 @@ jobs:
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         # deadsnakes python required due to https://github.com/JonathonReinhart/staticx/issues/188
         uses: deadsnakes/action@v3.2.0
-        if: env.python-version != '3.12'  # Python 3.12 is native on ubuntu-latest
+        if: env.PYTHON_VERSION != '3.12'  # Python 3.12 is native on ubuntu-latest
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
@@ -61,7 +61,7 @@ jobs:
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         # deadsnakes python required due to https://github.com/JonathonReinhart/staticx/issues/188
         uses: deadsnakes/action@v3.2.0
-        if: env.python-version != '3.12'  # Python 3.12 is native on ubuntu-latest
+        if: env.PYTHON_VERSION != '3.12'  # Python 3.12 is native on ubuntu-latest
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
