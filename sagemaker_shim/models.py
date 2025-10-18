@@ -33,12 +33,10 @@ from sagemaker_shim.logging import STDOUT_LEVEL
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath  # pragma: no cover
-    from types_aiobotocore_s3.client import (
-        S3Client as AsyncS3Client,  # pragma: no cover
-    )
+    from types_aiobotocore_s3.client import S3Client  # pragma: no cover
 else:
     StrOrBytesPath = object
-    AsyncS3Client = object
+    S3Client = object
 
 
 logger = logging.getLogger(__name__)
@@ -168,7 +166,7 @@ class S3File(NamedTuple):
 
 class S3Resources(NamedTuple):
     semaphore: Semaphore
-    client: AsyncS3Client
+    client: S3Client
 
 
 @asynccontextmanager
