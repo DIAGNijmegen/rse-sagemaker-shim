@@ -82,6 +82,9 @@ async def s3_upload_fileobj(*args, s3_resources: S3Resources, **kwargs):
 
 
 def sync_s3_operation(*, method, **kwargs):
+    # click applications are synchronous and must be tested
+    # synchronously. This converts async s3 operations to sync
+    # for use in tests.
     @async_to_sync
     async def _run():
         async with get_s3_resources() as s3_resources:
