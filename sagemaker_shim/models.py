@@ -347,8 +347,9 @@ class AuxiliaryData:
 
         self.ensure_directories_are_writable()
 
-        await self.download_model()
-        await self.download_ground_truth()
+        async with asyncio.TaskGroup() as task_group:
+            task_group.create_task(self.download_model())
+            task_group.create_task(self.download_ground_truth())
 
         return self
 
