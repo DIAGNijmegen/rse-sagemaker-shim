@@ -616,6 +616,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
     @property
     def proc_env(self) -> dict[str, str]:
         """The environment for the subprocess"""
+        # We include some secret values in the environment so
+        # ensure that they're not passed through to the subprocess
         env = {
             key: value
             for key, value in os.environ.items()
@@ -643,9 +645,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         await asyncio.wait_for(lock.acquire(), timeout=1.0)
 
-        logger.info(f"Invoking {self.pk=}")
-
         try:
+            logger.info(f"Invoking {self.pk=}")
             inference_result = await self._invoke(s3_resources=s3_resources)
             await self.upload_inference_result(
                 inference_result=inference_result, s3_resources=s3_resources
