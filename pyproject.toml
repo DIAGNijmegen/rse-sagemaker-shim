@@ -3,15 +3,16 @@ authors = [
     {name = "James Meakin"},
 ]
 license = {text = "Apache-2.0"}
-requires-python = ">=3.12,<3.13"
+requires-python = "==3.12.*"
 dependencies = [
     "fastapi!=0.89.0",
     "uvicorn",
     "click",
-    "boto3",
+    "aioboto3",
+    "botocore",
 ]
 name = "sagemaker-shim"
-version = "0.4.0"
+version = "0.5.0"
 description = "Adapts algorithms that implement the Grand Challenge inference API for running in SageMaker"
 readme = "README.md"
 classifiers = [
@@ -38,6 +39,8 @@ dev = [
     "boto3-stubs[s3]",
     "pytest-mock",
     "pytest-asyncio",
+    "types-aioboto3[s3]",
+    "types-aiofiles",
 ]
 
 [tool.isort]

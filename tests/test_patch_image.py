@@ -1,4 +1,5 @@
 import io
+import subprocess
 import sys
 from time import sleep
 
@@ -86,3 +87,15 @@ def test_patch_image(registry):
         "GRAND_CHALLENGE_COMPONENT_USER=0:0",
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     }
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="does not run outside linux"
+)
+def test_binary_is_static():
+    result = subprocess.run(
+        args=["ldd", f"dist/sagemaker-shim-static-{__version__}"],
+        encoding="utf-8",
+        stderr=subprocess.PIPE,
+    )
+    assert result.stderr.strip() == "not a dynamic executable"
