@@ -166,8 +166,13 @@ class S3File(NamedTuple):
     key: str
 
 
+class S3Resources(NamedTuple):
+    semaphore: Semaphore
+    client: AsyncS3Client
+
+
 @asynccontextmanager
-async def s3_resources() -> AsyncIterator[tuple[Semaphore, AsyncS3Client]]:
+async def get_s3_resources() -> AsyncIterator[S3Resources]:
     semaphore = asyncio.Semaphore(
         int(
             os.environ.get("GRAND_CHALLENGE_COMPONENT_ASYNC_CONCURRENCY", "50")
@@ -186,8 +191,8 @@ async def s3_resources() -> AsyncIterator[tuple[Semaphore, AsyncS3Client]]:
         "s3",
         endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL"),
         config=boto_config,
-    ) as s3_client:
-        yield semaphore, s3_client
+    ) as client:
+        yield S3Resources(semaphore=semaphore, client=client)
 
 
 def parse_s3_uri(*, s3_uri: str) -> S3File:
@@ -201,14 +206,14 @@ def parse_s3_uri(*, s3_uri: str) -> S3File:
 
 
 async def get_s3_file_content(
-    *, s3_uri: str, semaphore: Semaphore, s3_client: AsyncS3Client
+    *, s3_uri: str, s3_resources: S3Resources
 ) -> bytes:
     s3_file = parse_s3_uri(s3_uri=s3_uri)
 
     content = io.BytesIO()
 
-    async with semaphore:
-        await s3_client.download_fileobj(
+    async with s3_resources.semaphore:
+        await s3_resources.client.download_fileobj(
             Fileobj=content,
             Bucket=s3_file.bucket,
             Key=s3_file.key,
@@ -258,13 +263,13 @@ class ProcUserTarfile(ProcUserMixin, tarfile.TarFile):
 
 
 async def download_and_extract_tarball(
-    *, s3_uri: str, dest: Path, semaphore: Semaphore, s3_client: AsyncS3Client
+    *, s3_uri: str, dest: Path, s3_resources: S3Resources
 ) -> None:
     s3_file = parse_s3_uri(s3_uri=s3_uri)
 
     with SpooledTemporaryFile(max_size=4 * 1024 * 1024 * 1024) as f:
-        async with semaphore:
-            await s3_client.download_fileobj(
+        async with s3_resources.semaphore:
+            await s3_resources.client.download_fileobj(
                 Bucket=s3_file.bucket,
                 Key=s3_file.key,
                 Fileobj=f,
@@ -277,9 +282,8 @@ async def download_and_extract_tarball(
 
 
 class AuxiliaryData:
-    def __init__(self, semaphore: Semaphore, s3_client: AsyncS3Client):
-        self._semaphore = semaphore
-        self._s3_client = s3_client
+    def __init__(self, *, s3_resources: S3Resources):
+        self._s3_resources = s3_resources
 
     @property
     def model_source(self) -> str | None:
@@ -342,11 +346,11 @@ class AuxiliaryData:
 
     async def __aenter__(self) -> "AuxiliaryData":
         logger.info("Setting up Auxiliary Data")
+
         self.ensure_directories_are_writable()
 
-        async with asyncio.TaskGroup() as task_group:
-            task_group.create_task(self.download_model())
-            task_group.create_task(self.download_ground_truth())
+        await self.download_model()
+        await self.download_ground_truth()
 
         return self
 
@@ -376,8 +380,7 @@ class AuxiliaryData:
             await download_and_extract_tarball(
                 s3_uri=self.model_source,
                 dest=self.model_dest,
-                semaphore=self._semaphore,
-                s3_client=self._s3_client,
+                s3_resources=self._s3_resources,
             )
 
     async def download_ground_truth(self) -> None:
@@ -390,8 +393,7 @@ class AuxiliaryData:
             await download_and_extract_tarball(
                 s3_uri=self.ground_truth_source,
                 dest=self.ground_truth_dest,
-                semaphore=self._semaphore,
-                s3_client=self._s3_client,
+                s3_resources=self._s3_resources,
             )
 
 
@@ -415,11 +417,7 @@ class InferenceIO(BaseModel):
         return path / self.relative_path
 
     async def download(
-        self,
-        *,
-        input_path: Path,
-        semaphore: Semaphore,
-        s3_client: AsyncS3Client,
+        self, *, input_path: Path, s3_resources: S3Resources
     ) -> None:
         """Download this file from s3"""
         dest_file = self.local_file(path=input_path)
@@ -435,8 +433,8 @@ class InferenceIO(BaseModel):
                 zipfile = Path(tmp_dir) / "src.zip"
 
                 with zipfile.open("wb") as f:
-                    async with semaphore:
-                        await s3_client.download_fileobj(
+                    async with s3_resources.semaphore:
+                        await s3_resources.client.download_fileobj(
                             Bucket=self.bucket_name,
                             Key=self.bucket_key,
                             Fileobj=f,
@@ -456,19 +454,15 @@ class InferenceIO(BaseModel):
                     else:
                         raise error
         else:
-            async with semaphore:
-                await s3_client.download_file(
+            async with s3_resources.semaphore:
+                await s3_resources.client.download_file(
                     Bucket=self.bucket_name,
                     Key=self.bucket_key,
                     Filename=dest_file,
                 )
 
     async def upload(
-        self,
-        *,
-        output_path: Path,
-        semaphore: Semaphore,
-        s3_client: AsyncS3Client,
+        self, *, output_path: Path, s3_resources: S3Resources
     ) -> None:
         """Upload this file to s3"""
         src_file = str(self.local_file(path=output_path))
@@ -477,8 +471,8 @@ class InferenceIO(BaseModel):
             f"Uploading {src_file=} to {self.bucket_name=} with {self.bucket_key=}"
         )
 
-        async with semaphore:
-            await s3_client.upload_file(
+        async with s3_resources.semaphore:
+            await s3_resources.client.upload_file(
                 Filename=src_file,
                 Bucket=self.bucket_name,
                 Key=self.bucket_key,
@@ -643,9 +637,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return env
 
-    async def invoke(
-        self, semaphore: Semaphore, s3_client: AsyncS3Client
-    ) -> InferenceResult:
+    async def invoke(self, *, s3_resources: S3Resources) -> InferenceResult:
         """Run the inference on a single case"""
         logger.info(f"Awaiting lock for {self.pk=}")
 
@@ -654,13 +646,9 @@ class InferenceTask(ProcUserMixin, BaseModel):
         logger.info(f"Invoking {self.pk=}")
 
         try:
-            inference_result = await self._invoke(
-                semaphore=semaphore, s3_client=s3_client
-            )
+            inference_result = await self._invoke(s3_resources=s3_resources)
             await self.upload_inference_result(
-                inference_result=inference_result,
-                s3_client=s3_client,
-                semaphore=semaphore,
+                inference_result=inference_result, s3_resources=s3_resources
             )
         finally:
             lock.release()
@@ -669,16 +657,12 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return inference_result
 
-    async def _invoke(
-        self, *, semaphore: Semaphore, s3_client: AsyncS3Client
-    ) -> InferenceResult:
+    async def _invoke(self, *, s3_resources: S3Resources) -> InferenceResult:
         try:
             self.reset_io()
 
             try:
-                await self.download_input(
-                    semaphore=semaphore, s3_client=s3_client
-                )
+                await self.download_input(s3_resources=s3_resources)
             except ExceptionGroup as exception_group:
                 zip_group, rest = exception_group.split(ZipExtractionError)
 
@@ -698,9 +682,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
             return_code = await self.execute()
 
             if return_code == 0:
-                outputs = await self.upload_output(
-                    semaphore=semaphore, s3_client=s3_client
-                )
+                outputs = await self.upload_output(s3_resources=s3_resources)
             else:
                 outputs = set()
 
@@ -746,22 +728,18 @@ class InferenceTask(ProcUserMixin, BaseModel):
             )
             self.input_path.chmod(0o755)
 
-    async def download_input(
-        self, *, semaphore: Semaphore, s3_client: AsyncS3Client
-    ) -> None:
+    async def download_input(self, *, s3_resources: S3Resources) -> None:
         """Download all the inputs to the input path"""
         async with asyncio.TaskGroup() as task_group:
             for input_file in self.inputs:
                 task_group.create_task(
                     input_file.download(
-                        input_path=self.input_path,
-                        semaphore=semaphore,
-                        s3_client=s3_client,
+                        input_path=self.input_path, s3_resources=s3_resources
                     )
                 )
 
     async def upload_output(
-        self, *, semaphore: Semaphore, s3_client: AsyncS3Client
+        self, *, s3_resources: S3Resources
     ) -> set[InferenceIO]:
         """Upload all the outputs from the output path to s3"""
         output_path = self.output_path
@@ -781,8 +759,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
                     task_group.create_task(
                         output.upload(
                             output_path=self.output_path,
-                            semaphore=semaphore,
-                            s3_client=s3_client,
+                            s3_resources=s3_resources,
                         )
                     )
                     outputs.add(output)
@@ -790,11 +767,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
         return outputs
 
     async def upload_inference_result(
-        self,
-        *,
-        inference_result: InferenceResult,
-        semaphore: Semaphore,
-        s3_client: AsyncS3Client,
+        self, *, inference_result: InferenceResult, s3_resources: S3Resources
     ) -> None:
         content = inference_result.model_dump_json().encode("utf-8")
         signature = hmac.new(
@@ -814,8 +787,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
             f"{self.output_bucket_name=} with {inference_result=}"
         )
 
-        async with semaphore:
-            await s3_client.upload_fileobj(
+        async with s3_resources.semaphore:
+            await s3_resources.client.upload_fileobj(
                 Fileobj=io.BytesIO(content),
                 Bucket=self.output_bucket_name,
                 Key=bucket_key,

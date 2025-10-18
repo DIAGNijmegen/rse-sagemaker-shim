@@ -9,8 +9,9 @@ from click.testing import CliRunner
 
 from sagemaker_shim.cli import async_to_sync, cli
 from sagemaker_shim.models import (
+    S3Resources,
     get_s3_file_content,
-    s3_resources,
+    get_s3_resources,
 )
 from tests.utils import encode_b64j
 
@@ -75,18 +76,16 @@ def test_invoke_bad_bucket(minio):
     )
 
 
-async def s3_upload_fileobj(*args, semaphore, s3_client, **kwargs):
-    async with semaphore:
-        await s3_client.upload_fileobj(*args, **kwargs)
+async def s3_upload_fileobj(*args, s3_resources: S3Resources, **kwargs):
+    async with s3_resources.semaphore:
+        await s3_resources.client.upload_fileobj(*args, **kwargs)
 
 
 def sync_s3_operation(*, method, **kwargs):
     @async_to_sync
     async def _run():
-        async with s3_resources() as (semaphore, s3_client):
-            return await method(
-                **kwargs, semaphore=semaphore, s3_client=s3_client
-            )
+        async with get_s3_resources() as s3_resources:
+            return await method(**kwargs, s3_resources=s3_resources)
 
     return _run()
 

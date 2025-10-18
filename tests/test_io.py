@@ -17,7 +17,7 @@ from sagemaker_shim.models import (
     InferenceResult,
     InferenceTask,
     clean_path,
-    s3_resources,
+    get_s3_resources,
 )
 from tests.utils import encode_b64j
 
@@ -56,20 +56,20 @@ async def test_input_download(minio, tmp_path, monkeypatch):
     sub_data = os.urandom(8)
     sub_f = io.BytesIO(sub_data)
 
-    async with s3_resources() as (semaphore, s3_client):
-        async with semaphore:
-            await s3_client.upload_fileobj(
+    async with get_s3_resources() as s3_resources:
+        async with s3_resources.semaphore:
+            await s3_resources.client.upload_fileobj(
                 root_f, minio.input_bucket_name, f"{prefix}/root.bin"
             )
-            await s3_client.upload_fileobj(
+            await s3_resources.client.upload_fileobj(
                 sub_f, minio.input_bucket_name, f"{prefix}/sub/dir.bin"
             )
-            response = await s3_client.list_objects_v2(
+            response = await s3_resources.client.list_objects_v2(
                 Bucket=minio.input_bucket_name,
                 Prefix=prefix,
             )
 
-        await task.download_input(semaphore=semaphore, s3_client=s3_client)
+        await task.download_input(s3_resources=s3_resources)
 
     assert {f["Key"] for f in response["Contents"]} == {
         f"tasks/{task.pk}/root.bin",
@@ -115,17 +115,17 @@ async def test_input_decompress(minio, tmp_path, monkeypatch):
         zip.writestr("sdsdaf/test.txt", str(pk))
     sub_f.seek(0)
 
-    async with s3_resources() as (semaphore, s3_client):
-        async with semaphore:
-            await s3_client.upload_fileobj(
+    async with get_s3_resources() as s3_resources:
+        async with s3_resources.semaphore:
+            await s3_resources.client.upload_fileobj(
                 sub_f, minio.input_bucket_name, f"{prefix}/sub/predictions.zip"
             )
-            response = await s3_client.list_objects_v2(
+            response = await s3_resources.client.list_objects_v2(
                 Bucket=minio.input_bucket_name,
                 Prefix=prefix,
             )
 
-        await task.download_input(semaphore=semaphore, s3_client=s3_client)
+        await task.download_input(s3_resources=s3_resources)
 
     assert {f["Key"] for f in response["Contents"]} == {
         f"tasks/{task.pk}/sub/predictions.zip",
@@ -182,9 +182,9 @@ async def test_invoke_with_dodgy_file(
         zip.writestr("../../foo.txt", "hello!")
     sub_f.seek(0)
 
-    async with s3_resources() as (semaphore, s3_client):
-        async with semaphore:
-            await s3_client.upload_fileobj(
+    async with get_s3_resources() as s3_resources:
+        async with s3_resources.semaphore:
+            await s3_resources.client.upload_fileobj(
                 sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
             )
 
@@ -249,9 +249,9 @@ async def test_invoke_with_non_zip(
     sub_f = io.BytesIO(sub_data)
     sub_f.seek(0)
 
-    async with s3_resources() as (semaphore, s3_client):
-        async with semaphore:
-            await s3_client.upload_fileobj(
+    async with get_s3_resources() as s3_resources:
+        async with s3_resources.semaphore:
+            await s3_resources.client.upload_fileobj(
                 sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
             )
 
@@ -304,20 +304,20 @@ async def test_output_upload(minio, tmp_path, monkeypatch):
     root_f = io.BytesIO()
     sub_f = io.BytesIO()
 
-    async with s3_resources() as (semaphore, s3_client):
-        await task.upload_output(semaphore=semaphore, s3_client=s3_client)
+    async with get_s3_resources() as s3_resources:
+        await task.upload_output(s3_resources=s3_resources)
 
-        async with semaphore:
-            response = await s3_client.list_objects_v2(
+        async with s3_resources.semaphore:
+            response = await s3_resources.client.list_objects_v2(
                 Bucket=minio.output_bucket_name,
                 Prefix=prefix,
             )
-            await s3_client.download_fileobj(
+            await s3_resources.client.download_fileobj(
                 Fileobj=root_f,
                 Bucket=minio.output_bucket_name,
                 Key=f"tasks/{task.pk}/root.bin",
             )
-            await s3_client.download_fileobj(
+            await s3_resources.client.download_fileobj(
                 Fileobj=sub_f,
                 Bucket=minio.output_bucket_name,
                 Key=f"tasks/{task.pk}/sub/dir.bin",
@@ -363,13 +363,11 @@ async def test_inference_result_upload(
 
     serialised_invocation = io.BytesIO()
 
-    async with s3_resources() as (semaphore, s3_client):
-        direct_invocation = await task.invoke(
-            semaphore=semaphore, s3_client=s3_client
-        )
+    async with get_s3_resources() as s3_resources:
+        direct_invocation = await task.invoke(s3_resources=s3_resources)
 
-        async with semaphore:
-            await s3_client.download_fileobj(
+        async with s3_resources.semaphore:
+            await s3_resources.client.download_fileobj(
                 Fileobj=serialised_invocation,
                 Bucket=minio.output_bucket_name,
                 Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
@@ -416,13 +414,11 @@ async def test_inference_result_signed(
         "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", signing_key
     )
 
-    async with s3_resources() as (semaphore, s3_client):
-        direct_invocation = await task.invoke(
-            semaphore=semaphore, s3_client=s3_client
-        )
+    async with get_s3_resources() as s3_resources:
+        direct_invocation = await task.invoke(s3_resources=s3_resources)
 
-        async with semaphore:
-            response = await s3_client.get_object(
+        async with s3_resources.semaphore:
+            response = await s3_resources.client.get_object(
                 Bucket=minio.output_bucket_name,
                 Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
             )

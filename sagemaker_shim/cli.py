@@ -19,7 +19,7 @@ from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceTaskList,
     get_s3_file_content,
-    s3_resources,
+    get_s3_resources,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ async def invoke(tasks: str, file: str) -> None:
 
     tasks_json: str | bytes
 
-    async with s3_resources() as (semaphore, s3_client):
+    async with get_s3_resources() as s3_resources:
         if tasks and file:
             raise click.UsageError("Only one of tasks or file should be set")
         elif tasks:
@@ -90,7 +90,7 @@ async def invoke(tasks: str, file: str) -> None:
         elif file:
             try:
                 tasks_json = await get_s3_file_content(
-                    s3_uri=file, semaphore=semaphore, s3_client=s3_client
+                    s3_uri=file, s3_resources=s3_resources
                 )
             except (ValueError, ClientError, NoCredentialsError) as error:
                 raise click.BadParameter(
@@ -107,10 +107,10 @@ async def invoke(tasks: str, file: str) -> None:
             ) from error
 
         if parsed_tasks.root:
-            async with AuxiliaryData(semaphore=semaphore, s3_client=s3_client):
+            async with AuxiliaryData(s3_resources=s3_resources):
                 for task in parsed_tasks.root:
                     # Only run one task at a time
-                    await task.invoke(semaphore=semaphore, s3_client=s3_client)
+                    await task.invoke(s3_resources=s3_resources)
         else:
             raise click.UsageError("Empty task list provided")
 

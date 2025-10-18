@@ -14,7 +14,7 @@ from sagemaker_shim.models import (
     InferenceTask,
     ProcUserMixin,
     ProcUserTarfile,
-    s3_resources,
+    get_s3_resources,
     validate_bucket_name,
 )
 
@@ -330,20 +330,20 @@ async def test_model_and_ground_truth_extraction(
 
     spy = mocker.spy(ProcUserTarfile, "chown")
 
-    async with s3_resources() as (semaphore, s3_client):
-        async with semaphore:
-            await s3_client.upload_fileobj(
+    async with get_s3_resources() as s3_resources:
+        async with s3_resources.semaphore:
+            await s3_resources.client.upload_fileobj(
                 algorithm_model,
                 minio.input_bucket_name,
                 f"{model_pk}/model.tar.gz",
             )
-            await s3_client.upload_fileobj(
+            await s3_resources.client.upload_fileobj(
                 ground_truth_f,
                 minio.input_bucket_name,
                 f"{ground_truth_pk}/ground_truth.tar.gz",
             )
 
-        async with AuxiliaryData(semaphore=semaphore, s3_client=s3_client):
+        async with AuxiliaryData(s3_resources=s3_resources):
             downloaded_files = {
                 str(f.relative_to(tmp_path))
                 for f in tmp_path.rglob("**/*")
@@ -369,10 +369,8 @@ async def test_model_and_ground_truth_extraction(
 
 @pytest.mark.asyncio
 async def test_ensure_directories_are_writable_unset():
-    async with s3_resources() as (semaphore, s3_client):
-        async with AuxiliaryData(
-            semaphore=semaphore, s3_client=s3_client
-        ) as d:
+    async with get_s3_resources() as s3_resources:
+        async with AuxiliaryData(s3_resources=s3_resources) as d:
             assert d.writable_directories == []
             assert d.post_clean_directories == []
             assert d.model_source is None
@@ -402,10 +400,8 @@ async def test_ensure_directories_are_writable_set(
         directories,
     )
 
-    async with s3_resources() as (semaphore, s3_client):
-        async with AuxiliaryData(
-            semaphore=semaphore, s3_client=s3_client
-        ) as d:
+    async with get_s3_resources() as s3_resources:
+        async with AuxiliaryData(s3_resources=s3_resources) as d:
             assert d.writable_directories == expected
 
 
@@ -428,8 +424,8 @@ async def test_ensure_directories_are_writable(tmp_path, monkeypatch):
         f"{data.absolute()}:{model.absolute()}:{checkpoints.absolute()}:{tmp.absolute()}",
     )
 
-    async with s3_resources() as (semaphore, s3_client):
-        async with AuxiliaryData(semaphore=semaphore, s3_client=s3_client):
+    async with get_s3_resources() as s3_resources:
+        async with AuxiliaryData(s3_resources=s3_resources):
             pass
 
     assert data.stat().st_mode == 0o40777

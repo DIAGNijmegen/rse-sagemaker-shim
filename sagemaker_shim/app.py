@@ -27,7 +27,7 @@ from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceResult,
     InferenceTask,
-    s3_resources,
+    get_s3_resources,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    async with s3_resources() as (semaphore, s3_client):
-        async with AuxiliaryData(semaphore=semaphore, s3_client=s3_client):
+    async with get_s3_resources() as s3_resources:
+        async with AuxiliaryData(s3_resources=s3_resources):
             yield
 
 
@@ -66,5 +66,5 @@ async def invocations(task: InferenceTask) -> InferenceResult:
     logger.debug("invcations called")
     logger.debug(f"{task=}")
 
-    async with s3_resources() as (semaphore, s3_client):
-        return await task.invoke(semaphore=semaphore, s3_client=s3_client)
+    async with get_s3_resources() as s3_resources:
+        return await task.invoke(s3_resources=s3_resources)
