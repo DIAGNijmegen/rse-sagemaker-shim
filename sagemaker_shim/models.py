@@ -11,10 +11,12 @@ import pwd
 import re
 import subprocess
 import tarfile
+import time
 from asyncio import Semaphore
 from base64 import b64decode
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
@@ -483,6 +485,7 @@ class InferenceResult(BaseModel):
 
     pk: str
     return_code: int
+    exec_duration: timedelta | None
     outputs: list[InferenceIO]
     sagemaker_shim_version: str = version("sagemaker-shim")
 
@@ -672,14 +675,23 @@ class InferenceTask(ProcUserMixin, BaseModel):
                             level=logging.ERROR, msg=str(exception)
                         )
                     return InferenceResult(
-                        pk=self.pk, return_code=1, outputs=[]
+                        pk=self.pk,
+                        return_code=1,
+                        outputs=[],
+                        exec_duration=None,
                     )
 
                 if rest:
                     # re-raise any exceptions that were not ZipExtractionError
                     raise rest
 
+            logger.info(f"Calling {self.proc_args=}")
+
+            exec_start = time.monotonic()
             return_code = await self.execute()
+            exec_duration = time.monotonic() - exec_start
+
+            logger.info(f"{return_code=}")
 
             if return_code == 0:
                 outputs = await self.upload_output(s3_resources=s3_resources)
@@ -687,7 +699,10 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 outputs = set()
 
             return InferenceResult(
-                pk=self.pk, return_code=return_code, outputs=outputs
+                pk=self.pk,
+                return_code=return_code,
+                outputs=outputs,
+                exec_duration=timedelta(seconds=exec_duration),
             )
         finally:
             self.reset_io()
@@ -798,9 +813,11 @@ class InferenceTask(ProcUserMixin, BaseModel):
             )
 
     async def execute(self) -> int:
-        """Run the original entrypoint and command in a subprocess"""
-        logger.info(f"Calling {self.proc_args=}")
+        """
+        Run the original entrypoint and command in a subprocess
 
+        This needs to be as lean as possible as the method is timed
+        """
         process = await asyncio.create_subprocess_exec(
             *self.proc_args,
             user=self.proc_user.uid,
@@ -809,6 +826,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,
+            # The following should always be set to protect this environment
             shell=False,
             close_fds=True,
         )
@@ -827,8 +845,6 @@ class InferenceTask(ProcUserMixin, BaseModel):
             raise
         finally:
             return_code = await process.wait()
-
-        logger.info(f"{return_code=}")
 
         return return_code
 
