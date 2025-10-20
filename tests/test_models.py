@@ -14,7 +14,7 @@ from sagemaker_shim.models import (
     InferenceTask,
     ProcUserMixin,
     ProcUserTarfile,
-    get_s3_client,
+    get_s3_resources,
     validate_bucket_name,
 )
 
@@ -285,17 +285,11 @@ def test_home_is_set(monkeypatch):
     assert t.proc_env["HOME"] == pwd.getpwnam("root").pw_dir
 
 
-def test_model_and_ground_truth_extraction(
+@pytest.mark.asyncio
+async def test_model_and_ground_truth_extraction(
     minio, monkeypatch, tmp_path, mocker, algorithm_model
 ):
-    s3_client = get_s3_client()
-
     model_pk = str(uuid4())
-
-    s3_client.upload_fileobj(
-        algorithm_model, minio.input_bucket_name, f"{model_pk}/model.tar.gz"
-    )
-
     ground_truth_pk = str(uuid4())
 
     ground_truth_f = io.BytesIO()
@@ -310,12 +304,6 @@ def test_model_and_ground_truth_extraction(
         tar.addfile(file_info, io.BytesIO(content))
 
     ground_truth_f.seek(0)
-
-    s3_client.upload_fileobj(
-        ground_truth_f,
-        minio.input_bucket_name,
-        f"{ground_truth_pk}/ground_truth.tar.gz",
-    )
 
     model_destination = tmp_path / "model"
     ground_truth_destination = tmp_path / "ground_truth"
@@ -342,12 +330,25 @@ def test_model_and_ground_truth_extraction(
 
     spy = mocker.spy(ProcUserTarfile, "chown")
 
-    with AuxiliaryData():
-        downloaded_files = {
-            str(f.relative_to(tmp_path))
-            for f in tmp_path.rglob("**/*")
-            if f.is_file()
-        }
+    async with get_s3_resources() as s3_resources:
+        async with s3_resources.semaphore:
+            await s3_resources.client.upload_fileobj(
+                algorithm_model,
+                minio.input_bucket_name,
+                f"{model_pk}/model.tar.gz",
+            )
+            await s3_resources.client.upload_fileobj(
+                ground_truth_f,
+                minio.input_bucket_name,
+                f"{ground_truth_pk}/ground_truth.tar.gz",
+            )
+
+        async with AuxiliaryData(s3_resources=s3_resources):
+            downloaded_files = {
+                str(f.relative_to(tmp_path))
+                for f in tmp_path.rglob("**/*")
+                if f.is_file()
+            }
 
     assert downloaded_files == {
         "model/model-file1.txt",
@@ -366,18 +367,23 @@ def test_model_and_ground_truth_extraction(
     assert spy.call_count == 4
 
 
-def test_ensure_directories_are_writable_unset():
-    with AuxiliaryData() as d:
-        assert d.writable_directories == []
-        assert d.post_clean_directories == []
-        assert d.model_source is None
-        assert d.model_dest == Path("/opt/ml/model")
-        assert not d.model_dest.exists()
-        assert d.ground_truth_source is None
-        assert d.ground_truth_dest == Path("/opt/ml/input/data/ground_truth")
-        assert not d.ground_truth_dest.exists()
+@pytest.mark.asyncio
+async def test_ensure_directories_are_writable_unset():
+    async with get_s3_resources() as s3_resources:
+        async with AuxiliaryData(s3_resources=s3_resources) as d:
+            assert d.writable_directories == []
+            assert d.post_clean_directories == []
+            assert d.model_source is None
+            assert d.model_dest == Path("/opt/ml/model")
+            assert not d.model_dest.exists()
+            assert d.ground_truth_source is None
+            assert d.ground_truth_dest == Path(
+                "/opt/ml/input/data/ground_truth"
+            )
+            assert not d.ground_truth_dest.exists()
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "directories,expected",
     (
@@ -386,7 +392,7 @@ def test_ensure_directories_are_writable_unset():
         ("::", []),
     ),
 )
-def test_ensure_directories_are_writable_set(
+async def test_ensure_directories_are_writable_set(
     monkeypatch, directories, expected
 ):
     monkeypatch.setenv(
@@ -394,11 +400,13 @@ def test_ensure_directories_are_writable_set(
         directories,
     )
 
-    d = AuxiliaryData()
-    assert d.writable_directories == expected
+    async with get_s3_resources() as s3_resources:
+        async with AuxiliaryData(s3_resources=s3_resources) as d:
+            assert d.writable_directories == expected
 
 
-def test_ensure_directories_are_writable(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_ensure_directories_are_writable(tmp_path, monkeypatch):
     data = tmp_path / "opt" / "ml" / "output" / "data"
     data.mkdir(mode=0o755, parents=True)
 
@@ -416,8 +424,9 @@ def test_ensure_directories_are_writable(tmp_path, monkeypatch):
         f"{data.absolute()}:{model.absolute()}:{checkpoints.absolute()}:{tmp.absolute()}",
     )
 
-    with AuxiliaryData():
-        pass
+    async with get_s3_resources() as s3_resources:
+        async with AuxiliaryData(s3_resources=s3_resources):
+            pass
 
     assert data.stat().st_mode == 0o40777
     assert model.stat().st_mode == 0o40777
@@ -448,10 +457,11 @@ def test_reset_linked_input(tmp_path, monkeypatch):
     linked_input_parent = tmp_path / "linked-input"
 
     monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH", input_path.absolute()
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH", str(input_path.absolute())
     )
     monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT", linked_input_parent
+        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
+        str(linked_input_parent),
     )
 
     t = InferenceTask(

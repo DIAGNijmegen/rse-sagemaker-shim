@@ -18,14 +18,29 @@ Notes:
 """
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status
 
-from sagemaker_shim.models import InferenceResult, InferenceTask
+from sagemaker_shim.models import (
+    AuxiliaryData,
+    InferenceResult,
+    InferenceTask,
+    get_s3_resources,
+)
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async with get_s3_resources() as s3_resources:
+        async with AuxiliaryData(s3_resources=s3_resources):
+            yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/ping")
@@ -51,4 +66,5 @@ async def invocations(task: InferenceTask) -> InferenceResult:
     logger.debug("invcations called")
     logger.debug(f"{task=}")
 
-    return await task.invoke()
+    async with get_s3_resources() as s3_resources:
+        return await task.invoke(s3_resources=s3_resources)

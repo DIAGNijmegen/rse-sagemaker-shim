@@ -7,7 +7,7 @@ DIST_DIR=./dist
 all: crane sagemaker-shim-static-${TEST_VERSION}
 
 sagemaker-shim-${TEST_VERSION}:
-	pyinstaller -F ../sagemaker_shim/cli.py --paths .. --distpath . -n "sagemaker-shim-${TEST_VERSION}"
+	pyinstaller -F ../sagemaker_shim/cli.py --paths .. --distpath . --hidden-import=aioboto3.s3 --hidden-import=aioboto3.s3.inject -n "sagemaker-shim-${TEST_VERSION}"
 
 sagemaker-shim-static-${TEST_VERSION}: sagemaker-shim-${TEST_VERSION}
 	staticx "sagemaker-shim-${TEST_VERSION}" "sagemaker-shim-static-${TEST_VERSION}"

@@ -7,8 +7,12 @@ from uuid import uuid4
 import pytest
 from click.testing import CliRunner
 
-from sagemaker_shim.cli import cli
-from sagemaker_shim.models import get_s3_client, get_s3_file_content
+from sagemaker_shim.cli import async_to_sync, cli
+from sagemaker_shim.models import (
+    S3Resources,
+    get_s3_file_content,
+    get_s3_resources,
+)
 from tests.utils import encode_b64j
 
 
@@ -72,6 +76,23 @@ def test_invoke_bad_bucket(minio):
     )
 
 
+async def s3_upload_fileobj(*args, s3_resources: S3Resources, **kwargs):
+    async with s3_resources.semaphore:
+        await s3_resources.client.upload_fileobj(*args, **kwargs)
+
+
+def sync_s3_operation(*, method, **kwargs):
+    # click applications are synchronous and must be tested
+    # synchronously. This converts async s3 operations to sync
+    # for use in tests.
+    @async_to_sync
+    async def _run():
+        async with get_s3_resources() as s3_resources:
+            return await method(**kwargs, s3_resources=s3_resources)
+
+    return _run()
+
+
 @pytest.mark.parametrize(
     "cmd,expected_return_code",
     (
@@ -109,8 +130,9 @@ def test_inference_from_task_list(
     runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
 
     for pk in pk1, pk2:
-        serialised_invocation = get_s3_file_content(
-            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk}/.sagemaker_shim/inference_result.json"
+        serialised_invocation = sync_s3_operation(
+            method=get_s3_file_content,
+            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk}/.sagemaker_shim/inference_result.json",
         )
         parsed_result = json.loads(serialised_invocation)
 
@@ -151,8 +173,8 @@ def test_inference_from_s3_uri(minio, monkeypatch, cmd, expected_return_code):
 
     definition_key = f"{uuid4()}/invocations.json"
 
-    s3_client = get_s3_client()
-    s3_client.upload_fileobj(
+    sync_s3_operation(
+        method=s3_upload_fileobj,
         Fileobj=io.BytesIO(json.dumps(tasks).encode("utf-8")),
         Bucket=minio.input_bucket_name,
         Key=definition_key,
@@ -165,8 +187,9 @@ def test_inference_from_s3_uri(minio, monkeypatch, cmd, expected_return_code):
     )
 
     for pk in pk1, pk2:
-        serialised_invocation = get_s3_file_content(
-            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk}/.sagemaker_shim/inference_result.json"
+        serialised_invocation = sync_s3_operation(
+            method=get_s3_file_content,
+            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk}/.sagemaker_shim/inference_result.json",
         )
         parsed_result = json.loads(serialised_invocation)
 

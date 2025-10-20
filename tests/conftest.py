@@ -1,3 +1,4 @@
+import logging
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -14,6 +15,11 @@ from sagemaker_shim.app import app
 
 
 def pytest_sessionstart(session):
+    # Reduce the level of the aiobotocore logger as this
+    # causes issues with writing to closed streams
+    # when used in tests that use capsys and raise exceptions.
+    logging.getLogger("aiobotocore").setLevel(logging.WARNING)
+
     """https://docs.pytest.org/en/latest/reference/reference.html#_pytest.hookspec.pytest_sessionstart"""
     if sys.platform == "linux":
         subprocess.check_call(

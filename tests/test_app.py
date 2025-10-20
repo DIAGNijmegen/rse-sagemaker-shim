@@ -33,6 +33,16 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
     # /invocations endpoint.
+    input_path = tmp_path / "input"
+    linked_input_parent = tmp_path / "linked-input"
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH", str(input_path.absolute())
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
+        str(linked_input_parent),
+    )
 
     pk = str(uuid4())
     data = {
