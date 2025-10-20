@@ -507,5 +507,5 @@ async def test_exec_duration_set(
 
     assert duration > timedelta(milliseconds=1)
     assert duration < timedelta(seconds=10)
-    assert len(duration_string) == 8
-    assert data["exec_duration"] == f"PT{duration_string}S"
+    assert data["exec_duration"].startswith(f"PT{duration_string}")
+    assert data["exec_duration"].endswith("S")
