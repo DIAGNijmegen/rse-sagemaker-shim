@@ -5,6 +5,7 @@ import json
 import logging.config
 import os
 import secrets
+from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
@@ -199,6 +200,7 @@ async def test_invoke_with_dodgy_file(
 
     response = response.json()
     assert response["return_code"] == 1
+    assert response["exec_duration"] is None
 
     captured = capsys.readouterr()
     assert captured.err == (
@@ -454,3 +456,57 @@ def test_folder_cleanup(tmp_path):
     clean_path(path=tmp_path)
 
     assert [*tmp_path.rglob("**/*")] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cmd,expected_return_code",
+    (
+        (["echo", "hello"], 0),
+        (["bash", "-c", "exit 1"], 1),
+    ),
+)
+async def test_exec_duration_set(
+    minio, tmp_path, monkeypatch, cmd, expected_return_code
+):
+    pk = str(uuid4())
+    signing_key = secrets.token_hex()
+    prefix = f"tasks/{pk}"
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=str(prefix),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", signing_key
+    )
+
+    async with get_s3_resources() as s3_resources:
+        direct_invocation = await task.invoke(s3_resources=s3_resources)
+
+        async with s3_resources.semaphore:
+            response = await s3_resources.client.get_object(
+                Bucket=minio.output_bucket_name,
+                Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
+            )
+
+    assert direct_invocation.return_code == expected_return_code
+    assert direct_invocation.pk == pk
+
+    data = json.loads(await response["Body"].read())
+    duration = direct_invocation.exec_duration
+    duration_string = str(direct_invocation.exec_duration.total_seconds())
+
+    assert duration > timedelta(milliseconds=1)
+    assert duration < timedelta(seconds=10)
+    # Value should be an ISO 8601 duration
+    assert data["exec_duration"].startswith(f"PT{duration_string}")
+    assert data["exec_duration"].endswith("S")
