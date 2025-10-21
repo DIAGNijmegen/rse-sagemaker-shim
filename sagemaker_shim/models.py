@@ -221,11 +221,12 @@ def clean_path(path: Path) -> None:  # noqa:C901
                 pass
             else:
                 raise
-        symlink.unlink()
+
+        symlink.unlink(missing_ok=True)
 
     for file in files:
         file.chmod(0o700)
-        file.unlink()
+        file.unlink(missing_ok=True)
 
     for directory in directories:
         directory.chmod(0o700)
