@@ -76,8 +76,8 @@ class ProcUserMixin:
         )
 
         if match:
-            user = match.group("user") or ""
-            group = match.group("group") or ""
+            user = match.group("user")
+            group = match.group("group")
 
             logger.info(f"Looking up {user=} {group=}")
 
@@ -96,8 +96,8 @@ class ProcUserMixin:
             raise UserSafeError(f"Invalid container user '{self._user}'")
 
     @classmethod
-    def _get_user_info(cls, id_or_name: str) -> UserInfo:
-        if id_or_name == "":
+    def _get_user_info(cls, id_or_name: str | None) -> UserInfo:
+        if id_or_name is None:
             return UserInfo(uid=None, gid=None, home=None, groups=[])
 
         try:
@@ -144,8 +144,8 @@ class ProcUserMixin:
             return [gid, *sorted(user_groups)]
 
     @staticmethod
-    def _get_group_id(id_or_name: str) -> int | None:
-        if id_or_name == "":
+    def _get_group_id(id_or_name: str | None) -> int | None:
+        if id_or_name is None:
             return None
 
         try:
