@@ -9,12 +9,13 @@ import logging
 import os
 import pwd
 import re
+import signal
 import subprocess
 import tarfile
 import time
 from asyncio import Semaphore
 from base64 import b64decode
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from functools import cached_property
@@ -29,7 +30,7 @@ import aioboto3
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
-from sagemaker_shim.exceptions import ZipExtractionError
+from sagemaker_shim.exceptions import UserSafeError, ZipExtractionError
 from sagemaker_shim.extract import safe_extract
 from sagemaker_shim.logging import STDOUT_LEVEL
 
@@ -497,6 +498,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
     inputs: list[InferenceIO]
     output_bucket_name: str
     output_prefix: str
+    timeout: timedelta
 
     @field_validator("output_prefix")
     @classmethod
@@ -664,32 +666,41 @@ class InferenceTask(ProcUserMixin, BaseModel):
         try:
             self.reset_io()
 
+            error_inference_result = InferenceResult(
+                pk=self.pk,
+                return_code=1,
+                outputs=[],
+                exec_duration=None,
+            )
+
             try:
                 await self.download_input(s3_resources=s3_resources)
             except ExceptionGroup as exception_group:
-                zip_group, rest = exception_group.split(ZipExtractionError)
+                user_safe_errors, rest = exception_group.split(UserSafeError)
 
-                if zip_group:
-                    for exception in zip_group.exceptions:
+                if user_safe_errors:
+                    for exception in user_safe_errors.exceptions:
                         self.log_external(
                             level=logging.ERROR, msg=str(exception)
                         )
-                    return InferenceResult(
-                        pk=self.pk,
-                        return_code=1,
-                        outputs=[],
-                        exec_duration=None,
-                    )
+                    return error_inference_result
 
                 if rest:
-                    # re-raise any exceptions that were not ZipExtractionError
                     raise rest
 
             logger.info(f"Calling {self.proc_args=}")
 
-            exec_start = time.monotonic()
-            return_code = await self.execute()
-            exec_duration = time.monotonic() - exec_start
+            try:
+                exec_start = time.monotonic()
+                return_code = await asyncio.wait_for(
+                    self.execute(), timeout=self.timeout.total_seconds()
+                )
+                exec_duration = time.monotonic() - exec_start
+            except TimeoutError:
+                self.log_external(
+                    level=logging.ERROR, msg="Time limit exceeded"
+                )
+                return error_inference_result
 
             logger.info(f"{return_code=}")
 
@@ -826,27 +837,112 @@ class InferenceTask(ProcUserMixin, BaseModel):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.proc_env,
+            # A new process group must be used for cancellation
+            start_new_session=True,
             # The following should always be set to protect this environment
             shell=False,
             close_fds=True,
         )
 
+        stdout_task = asyncio.create_task(
+            self._stream_to_external(stream=process.stdout, level=STDOUT_LEVEL)
+        )
+        stderr_task = asyncio.create_task(
+            self._stream_to_external(
+                stream=process.stderr, level=STDOUT_LEVEL + 10
+            )
+        )
+
         try:
-            await asyncio.gather(
-                self._stream_to_external(
-                    stream=process.stdout, level=STDOUT_LEVEL
-                ),
-                self._stream_to_external(
-                    stream=process.stderr, level=STDOUT_LEVEL + 10
+            await asyncio.gather(stdout_task, stderr_task)
+            return await process.wait()
+
+        except asyncio.CancelledError:
+            logger.info("Execution was cancelled")
+            # shield so termination completes even if cancellation continues
+            await asyncio.shield(
+                self._terminate_group_and_wait(process=process)
+            )
+            await self._cancel_tasks(tasks=(stdout_task, stderr_task))
+            raise
+
+        except Exception:
+            logger.exception("Exception in execution")
+            await asyncio.shield(
+                self._terminate_group_and_wait(process=process)
+            )
+            await self._cancel_tasks(tasks=(stdout_task, stderr_task))
+            raise
+
+        finally:
+            # best-effort final cleanup; shielded to avoid being interrupted
+            await asyncio.shield(
+                self._terminate_group_and_wait(process=process)
+            )
+
+    @staticmethod
+    async def _cancel_tasks(*, tasks: Iterable[asyncio.Task[None]]) -> None:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    @staticmethod
+    async def _terminate_group_and_wait(  # noqa:C901
+        *, process: asyncio.subprocess.Process
+    ) -> None:
+        if process.returncode is not None:
+            return
+
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception:
+            try:
+                process.terminate()
+            except Exception:
+                logger.info("process.terminate() failed", exc_info=True)
+
+        try:
+            # Wait for graceful termination
+            await asyncio.wait_for(
+                process.wait(),
+                timeout=int(
+                    os.environ.get(
+                        "GRAND_CHALLENGE_COMPONENT_SIGTERM_GRACE_SECONDS", "5"
+                    )
                 ),
             )
+            logger.info("Process group terminated")
+            return
+        except TimeoutError:
+            logger.warning(
+                "Process group did not exit within grace period; "
+                "escalating to SIGKILL"
+            )
         except Exception:
-            process.kill()
-            raise
-        finally:
-            return_code = await process.wait()
+            logger.info(
+                "Error while waiting for process.wait()", exc_info=True
+            )
 
-        return return_code
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                logger.info("process.kill() failed", exc_info=True)
+
+        try:
+            await process.wait()
+            logger.info("Process group killed")
+        except Exception:
+            logger.warning(
+                "Failed awaiting process.wait() after kill", exc_info=True
+            )
 
     async def _stream_to_external(
         self, *, stream: asyncio.StreamReader | None, level: int

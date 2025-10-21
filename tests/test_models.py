@@ -1,14 +1,17 @@
 import getpass
 import grp
 import io
+import logging.config
 import os
 import pwd
 import tarfile
+from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
+from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceTask,
@@ -17,6 +20,7 @@ from sagemaker_shim.models import (
     get_s3_resources,
     validate_bucket_name,
 )
+from tests.utils import encode_b64j
 
 
 @pytest.fixture
@@ -45,7 +49,11 @@ def test_invalid_bucket_name():
 def test_blank_prefix():
     with pytest.raises(ValueError) as error:
         InferenceTask(
-            pk="test", inputs=[], output_bucket_name="test", output_prefix=""
+            pk="test",
+            inputs=[],
+            output_bucket_name="test",
+            output_prefix="",
+            timeout=timedelta(),
         )
 
     assert str(error).startswith(
@@ -57,7 +65,11 @@ def test_blank_prefix():
 
 def test_prefix_slash_appended():
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
     assert t.output_prefix == "test/"
 
@@ -67,7 +79,11 @@ def test_patching_ld_library_path(monkeypatch):
     monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "special")
 
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
 
     env = os.environ.copy()
@@ -82,7 +98,11 @@ def test_removing_ld_library_path(monkeypatch):
     monkeypatch.setenv("LD_LIBRARY_PATH", "present")
 
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
 
     env = os.environ.copy()
@@ -96,7 +116,11 @@ def test_all_grand_challenge_env_vars_removed(monkeypatch):
     monkeypatch.setenv("grand_challenge_foo", "bar")
 
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
 
     env = os.environ.copy()
@@ -179,7 +203,11 @@ def test_proc_user(
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", user)
 
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
 
     assert t._user == user
@@ -250,7 +278,11 @@ def test_proc_user_errors(monkeypatch, user, expected_error):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", user)
 
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
 
     assert t._user == user
@@ -263,7 +295,11 @@ def test_proc_user_errors(monkeypatch, user, expected_error):
 
 def test_proc_user_unset(algorithm_model):
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
 
     assert t._user == ""
@@ -279,7 +315,11 @@ def test_home_is_set(monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", "root")
 
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
 
     assert t.proc_env["HOME"] == pwd.getpwnam("root").pw_dir
@@ -436,7 +476,11 @@ async def test_ensure_directories_are_writable(tmp_path, monkeypatch):
 
 def test_linked_input_path_default():
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
 
     assert t.linked_input_path == Path("/opt/ml/input/data/test-input")
@@ -446,7 +490,11 @@ def test_linked_input_path_setting(monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT", "/foo")
 
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
 
     assert t.linked_input_path == Path("/foo/test-input")
@@ -465,7 +513,11 @@ def test_reset_linked_input(tmp_path, monkeypatch):
     )
 
     t = InferenceTask(
-        pk="test", inputs=[], output_bucket_name="test", output_prefix="test"
+        pk="test",
+        inputs=[],
+        output_bucket_name="test",
+        output_prefix="test",
+        timeout=timedelta(),
     )
     t.reset_io()
 
@@ -480,3 +532,46 @@ def test_reset_linked_input(tmp_path, monkeypatch):
     # Ensure 0o755 permissions
     assert os.stat(input_path).st_mode & 0o777 == 0o755
     assert os.stat(expected_input_directory).st_mode & 0o777 == 0o755
+
+
+@pytest.mark.asyncio
+async def test_timeout(minio, monkeypatch, capsys):
+    cmd = ["sleep", "10"]
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=str(prefix),
+        timeout=timedelta(seconds=1),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.invoke(s3_resources=s3_resources)
+
+    assert result.return_code == 1
+
+    captured = capsys.readouterr()
+    # "Time limit exceeded" must be the last log for the user error
+    assert captured.err == (
+        '{"log": "Time limit exceeded", "level": "ERROR", "source": "stderr", '
+        f'"internal": false, "task": "{pk}"}}\n'
+    )
+    assert (
+        '{"log": "Execution was cancelled", "level": "INFO", "source": "stdout", '
+        '"internal": true, "task": null}' in captured.out
+    )
+    assert (
+        '{"log": "Process group terminated", "level": "INFO", "source": "stdout", '
+        '"internal": true, "task": null}' in captured.out
+    )
