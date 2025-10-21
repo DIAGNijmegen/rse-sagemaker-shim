@@ -68,9 +68,20 @@ def safe_extract(*, src: Path, dest: Path) -> None:
                     f"Extracting {member['src']=} from {src} to {file_dest}"
                 )
 
-                with (
-                    zf.open(member["src"], "r") as fs,
-                    open(file_dest, "wb") as fd,
-                ):
-                    while chunk := fs.read(8192):
-                        fd.write(chunk)
+                try:
+                    with (
+                        zf.open(member["src"], "r") as fs,
+                        open(file_dest, "wb") as fd,
+                    ):
+                        while chunk := fs.read(8192):
+                            fd.write(chunk)
+                except NotImplementedError as error:
+                    if (
+                        str(error)
+                        == "That compression method is not supported"
+                    ):
+                        raise UserSafeError(
+                            "Zip file contains an unsupported compression method"
+                        ) from error
+                    else:
+                        raise
