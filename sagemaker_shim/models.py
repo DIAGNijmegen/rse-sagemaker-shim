@@ -326,7 +326,8 @@ class AuxiliaryData:
         writable_directories = [
             Path(d)
             for d in os.environ.get(
-                "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", ""
+                "GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES",
+                "/opt/ml/output/data:/opt/ml/model:/opt/ml/input/data/ground_truth:/opt/ml/checkpoints:/tmp",
             ).split(":")
             if d
         ]
