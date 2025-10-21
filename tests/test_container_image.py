@@ -156,7 +156,7 @@ def test_invocations_endpoint(minio):
         "inputs": [],
         "output_bucket_name": minio.output_bucket_name,
         "output_prefix": f"test/{pk}",
-        "timeout": "PT0S",
+        "timeout": "PT10S",
     }
     response = httpx.post(
         "http://localhost:8080/invocations", json=data, timeout=30
@@ -192,7 +192,7 @@ def test_alpine_image(minio):
             "inputs": [],
             "output_bucket_name": minio.output_bucket_name,
             "output_prefix": f"test/{pk}",
-            "timeout": "PT0S",
+            "timeout": "PT10S",
         }
         response = httpx.post(
             f"http://localhost:{host_port}/invocations", json=data, timeout=30
