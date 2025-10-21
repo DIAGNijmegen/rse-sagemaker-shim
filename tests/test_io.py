@@ -518,3 +518,4 @@ async def test_exec_duration_set(
     # Value should be an ISO 8601 duration
     assert data["exec_duration"].startswith(f"PT{duration_string}")
     assert data["exec_duration"].endswith("S")
+    assert data["invoke_duration"] is None
