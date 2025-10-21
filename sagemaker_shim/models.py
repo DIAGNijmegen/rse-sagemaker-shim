@@ -30,7 +30,7 @@ import aioboto3
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
-from sagemaker_shim.exceptions import UserSafeError, ZipExtractionError
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.extract import safe_extract
 from sagemaker_shim.logging import STDOUT_LEVEL
 
@@ -62,7 +62,7 @@ class ProcUserMixin:
     @property
     def _user(self) -> str:
         user = os.environ.get("GRAND_CHALLENGE_COMPONENT_USER", "")
-        logger.debug(f"{user=}")
+        logger.info(f"{user=}")
         return user
 
     @cached_property
@@ -71,12 +71,18 @@ class ProcUserMixin:
             return UserInfo(uid=None, gid=None, home=None, groups=[])
 
         match = re.fullmatch(
-            r"^(?P<user>[0-9a-zA-Z]*):?(?P<group>[0-9a-zA-Z]*)$", self._user
+            r"^(?P<user>[A-Za-z][A-Za-z0-9._-]*|[0-9]+)?(:(?P<group>[A-Za-z][A-Za-z0-9._-]*|[0-9]+))?$",
+            self._user,
         )
 
         if match:
-            info = self._get_user_info(id_or_name=match.group("user"))
-            group_id = self._get_group_id(id_or_name=match.group("group"))
+            user = match.group("user")
+            group = match.group("group")
+
+            logger.info(f"Looking up {user=} {group=}")
+
+            info = self._get_user_info(id_or_name=user)
+            group_id = self._get_group_id(id_or_name=group)
 
             gid = info.gid if group_id is None else group_id
 
@@ -87,11 +93,11 @@ class ProcUserMixin:
                 groups=self._put_gid_first(gid=gid, groups=info.groups),
             )
         else:
-            raise RuntimeError(f"Invalid user '{self._user}'")
+            raise UserSafeError(f"Invalid container user '{self._user}'")
 
     @classmethod
-    def _get_user_info(cls, id_or_name: str) -> UserInfo:
-        if id_or_name == "":
+    def _get_user_info(cls, id_or_name: str | None) -> UserInfo:
+        if id_or_name is None:
             return UserInfo(uid=None, gid=None, home=None, groups=[])
 
         try:
@@ -100,7 +106,9 @@ class ProcUserMixin:
             try:
                 uid = int(id_or_name)
             except ValueError as error:
-                raise RuntimeError(f"User '{id_or_name}' not found") from error
+                raise UserSafeError(
+                    f"User '{id_or_name}' not found"
+                ) from error
 
             try:
                 user = pwd.getpwuid(uid)
@@ -136,8 +144,8 @@ class ProcUserMixin:
             return [gid, *sorted(user_groups)]
 
     @staticmethod
-    def _get_group_id(id_or_name: str) -> int | None:
-        if id_or_name == "":
+    def _get_group_id(id_or_name: str | None) -> int | None:
+        if id_or_name is None:
             return None
 
         try:
@@ -146,7 +154,7 @@ class ProcUserMixin:
             try:
                 return int(id_or_name)
             except ValueError as error:
-                raise RuntimeError(
+                raise UserSafeError(
                     f"Group '{id_or_name}' not found"
                 ) from error
 
@@ -447,12 +455,12 @@ class InferenceIO(BaseModel):
                 try:
                     safe_extract(src=zipfile, dest=dest_file.parent)
                 except BadZipFile as error:
-                    raise ZipExtractionError(
+                    raise UserSafeError(
                         "Input zip file could not be extracted"
                     ) from error
                 except OSError as error:
                     if error.errno == errno.ENOSPC:
-                        raise ZipExtractionError(
+                        raise UserSafeError(
                             "Contents of zip file too large"
                         ) from error
                     else:
@@ -665,7 +673,9 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return inference_result
 
-    async def _invoke(self, *, s3_resources: S3Resources) -> InferenceResult:
+    async def _invoke(  # noqa:C901
+        self, *, s3_resources: S3Resources
+    ) -> InferenceResult:
         try:
             self.reset_io()
 
@@ -698,20 +708,16 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 return_code = await asyncio.wait_for(
                     self.execute(), timeout=self.timeout.total_seconds()
                 )
-                exec_duration = time.monotonic() - exec_start
+            except UserSafeError as error:
+                self.log_external(level=logging.ERROR, msg=str(error))
+                return_code = 1
             except TimeoutError:
                 self.log_external(
                     level=logging.ERROR, msg="Time limit exceeded"
                 )
-                return InferenceResult(
-                    pk=self.pk,
-                    return_code=1,
-                    outputs=[],
-                    exec_duration=timedelta(
-                        seconds=time.monotonic() - exec_start
-                    ),
-                    invoke_duration=None,
-                )
+                return_code = 1
+
+            exec_duration = time.monotonic() - exec_start
 
             logger.info(f"{return_code=}")
 

@@ -3,7 +3,7 @@ from zipfile import ZipFile
 
 import pytest
 
-from sagemaker_shim.exceptions import ZipExtractionError
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.extract import safe_extract
 
 
@@ -17,12 +17,12 @@ def test_extract_with_dodgy_file(tmp_path):
 
     dest.mkdir()
 
-    with pytest.raises(ZipExtractionError) as error:
+    with pytest.raises(UserSafeError) as error:
         safe_extract(src=file, dest=dest)
 
     assert str(error) == (
         "<ExceptionInfo "
-        "ZipExtractionError('Zip file contains invalid paths') tblen=2>"
+        "UserSafeError('Zip file contains invalid paths') tblen=2>"
     )
 
 
