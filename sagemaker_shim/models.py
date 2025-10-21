@@ -163,15 +163,14 @@ class ProcUserMixin:
                 ) from error
 
 
-def clean_path(path: Path) -> None:  # noqa:C901
-    if not path.exists(follow_symlinks=False):
+def clean_path(path: Path) -> None:
+    if not path.exists():
         return
 
     for entry in path.iterdir():
         full_path = entry.resolve()
 
         if entry.is_symlink():
-
             try:
                 entry.chmod(0o700, follow_symlinks=False)
             except NotImplementedError as error:
@@ -182,12 +181,11 @@ def clean_path(path: Path) -> None:  # noqa:C901
                     pass
                 else:
                     raise
-
-            entry.unlink(missing_ok=True)
+            entry.unlink()
 
         if full_path.is_file():
             full_path.chmod(0o700)
-            full_path.unlink(missing_ok=True)
+            full_path.unlink()
         elif full_path.is_dir():
             full_path.chmod(0o700)
             clean_path(path=full_path)
