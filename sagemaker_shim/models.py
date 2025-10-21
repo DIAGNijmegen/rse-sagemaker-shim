@@ -791,9 +791,15 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
     def reset_io(self) -> None:
         """Resets the input and output directories"""
-        clean_path(path=self.input_path)
-        clean_path(path=self.output_path)
-        self.reset_linked_input()
+        try:
+            clean_path(path=self.input_path)
+            clean_path(path=self.output_path)
+            self.reset_linked_input()
+        except Exception as error:
+            logger.critical(f"Could not reset io: {error}")
+            raise UserSafeError(
+                "The containers input and output directories could not be reset"
+            ) from error
 
     def reset_linked_input(self) -> None:
         """Resets the symlink from the input to the linked directory"""
@@ -949,8 +955,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
             await self._cancel_tasks(tasks=(stdout_task, stderr_task))
             raise
 
-        except Exception:
-            logger.exception("Exception in execution")
+        except Exception as error:
+            logger.critical(f"Exception in execution: {error}")
             await asyncio.shield(
                 self._terminate_group_and_wait(process=process)
             )
