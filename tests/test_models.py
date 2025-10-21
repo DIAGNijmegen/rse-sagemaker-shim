@@ -253,26 +253,35 @@ def test_put_gid_first():
     (
         (
             f"{os.getuid()}:nonExistentGroup",
-            "Group 'nonExistentGroup' not found",
+            "The group defined in the containers USER instruction does not exist",
         ),
         (
             f"{getpass.getuser()}:nonExistentGroup",
-            "Group 'nonExistentGroup' not found",
+            "The group defined in the containers USER instruction does not exist",
         ),
-        ("nonExistentUser", "User 'nonExistentUser' not found"),
+        (
+            "nonExistentUser",
+            "The user defined in the containers USER instruction does not exist",
+        ),
         (
             "nonExistentUser:nonExistentGroup",
-            "User 'nonExistentUser' not found",
+            "The user defined in the containers USER instruction does not exist",
         ),
-        (":nonExistentGroup", "Group 'nonExistentGroup' not found"),
+        (
+            ":nonExistentGroup",
+            "The group defined in the containers USER instruction does not exist",
+        ),
         (
             f"nonExistentUser:{grp.getgrgid(0).gr_name}",
-            "User 'nonExistentUser' not found",
+            "The user defined in the containers USER instruction does not exist",
         ),
-        (f"nonExistentUser:{os.getgid()}", "User 'nonExistentUser' not found"),
-        ("🙈:🙉", "Invalid container user '🙈:🙉'"),
-        ("🙈", "Invalid container user '🙈'"),
-        (":🙉", "Invalid container user ':🙉'"),
+        (
+            f"nonExistentUser:{os.getgid()}",
+            "The user defined in the containers USER instruction does not exist",
+        ),
+        ("🙈:🙉", "Invalid argument for the containers USER instruction"),
+        ("🙈", "Invalid argument for the containers USER instruction"),
+        (":🙉", "Invalid argument for the containers USER instruction"),
     ),
 )
 def test_proc_user_errors(monkeypatch, user, expected_error):
@@ -615,8 +624,90 @@ async def test_non_existent_user(minio, monkeypatch, capsys):
     assert result.invoke_duration is None  # should only be set for invocation
 
     captured = capsys.readouterr()
-    # "Invalid container user" must be the last log for the user error
+    # Invalid argument must be the last log for the user error
     assert captured.err == (
-        '{"log": "Invalid container user \'-gdfs\'", "level": "ERROR", '
+        '{"log": "Invalid argument for the containers USER instruction", '
+        f'"level": "ERROR", "source": "stderr", "internal": false, "task": "{pk}"}}\n'
+    )
+
+
+@pytest.mark.asyncio
+async def test_user_cmd_permission_denied(
+    minio, monkeypatch, capsys, tmp_path
+):
+    test_file = tmp_path / "no_perms.sh"
+    test_file.touch()
+
+    cmd = [str(tmp_path / "no_perms.sh")]
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=str(prefix),
+        timeout=timedelta(seconds=1),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.invoke(s3_resources=s3_resources)
+
+    assert result.return_code == 1
+    assert int(result.exec_duration.total_seconds()) == 0
+    assert result.invoke_duration is None  # should only be set for invocation
+
+    captured = capsys.readouterr()
+    # No permission must be the last log for the user error
+    assert captured.err == (
+        '{"log": "The user defined in the containers USER instruction '
+        "does not have permission to execute the command defined by "
+        'the containers ENTRYPOINT and CMD instructions", "level": "ERROR", '
+        f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
+    )
+
+
+@pytest.mark.asyncio
+async def test_user_cmd_missing(minio, monkeypatch, capsys):
+    cmd = ["doesnt_exist.sh"]
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=str(prefix),
+        timeout=timedelta(seconds=1),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.invoke(s3_resources=s3_resources)
+
+    assert result.return_code == 1
+    assert int(result.exec_duration.total_seconds()) == 0
+    assert result.invoke_duration is None  # should only be set for invocation
+
+    captured = capsys.readouterr()
+    # Command not found must be the last log for the user error
+    assert captured.err == (
+        '{"log": "The command defined by the containers ENTRYPOINT '
+        'and CMD instructions does not exist", "level": "ERROR", '
         f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
     )

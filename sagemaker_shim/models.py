@@ -93,7 +93,9 @@ class ProcUserMixin:
                 groups=self._put_gid_first(gid=gid, groups=info.groups),
             )
         else:
-            raise UserSafeError(f"Invalid container user '{self._user}'")
+            raise UserSafeError(
+                "Invalid argument for the containers USER instruction"
+            )
 
     @classmethod
     def _get_user_info(cls, id_or_name: str | None) -> UserInfo:
@@ -107,7 +109,8 @@ class ProcUserMixin:
                 uid = int(id_or_name)
             except ValueError as error:
                 raise UserSafeError(
-                    f"User '{id_or_name}' not found"
+                    "The user defined in the containers USER instruction "
+                    "does not exist"
                 ) from error
 
             try:
@@ -155,7 +158,8 @@ class ProcUserMixin:
                 return int(id_or_name)
             except ValueError as error:
                 raise UserSafeError(
-                    f"Group '{id_or_name}' not found"
+                    "The group defined in the containers USER "
+                    "instruction does not exist"
                 ) from error
 
 
@@ -847,20 +851,32 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         This needs to be as lean as possible as the method is timed
         """
-        process = await asyncio.create_subprocess_exec(
-            *self.proc_args,
-            user=self.proc_user.uid,
-            group=self.proc_user.gid,
-            extra_groups=self.extra_groups,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=self.proc_env,
-            # A new process group must be used for cancellation
-            start_new_session=True,
-            # The following should always be set to protect this environment
-            shell=False,
-            close_fds=True,
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *self.proc_args,
+                user=self.proc_user.uid,
+                group=self.proc_user.gid,
+                extra_groups=self.extra_groups,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=self.proc_env,
+                # A new process group must be used for cancellation
+                start_new_session=True,
+                # The following should always be set to protect this environment
+                shell=False,
+                close_fds=True,
+            )
+        except PermissionError as error:
+            raise UserSafeError(
+                "The user defined in the containers USER instruction "
+                "does not have permission to execute the command "
+                "defined by the containers ENTRYPOINT and CMD instructions"
+            ) from error
+        except FileNotFoundError as error:
+            raise UserSafeError(
+                "The command defined by the containers ENTRYPOINT and "
+                "CMD instructions does not exist"
+            ) from error
 
         stdout_task = asyncio.create_task(
             self._stream_to_external(stream=process.stdout, level=STDOUT_LEVEL)
