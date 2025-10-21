@@ -18,6 +18,7 @@ from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceTaskList,
+    S3Resources,
     get_s3_file_content,
     get_s3_resources,
 )
@@ -80,41 +81,58 @@ def serve() -> None:
 async def invoke(tasks: str, file: str) -> None:
     logger.info("Invoking the model")
 
-    tasks_json: str | bytes
-
     async with get_s3_resources() as s3_resources:
-        if tasks and file:
-            raise click.UsageError("Only one of tasks or file should be set")
-        elif tasks:
-            tasks_json = tasks
-        elif file:
-            try:
-                tasks_json = await get_s3_file_content(
-                    s3_uri=file, s3_resources=s3_resources
-                )
-            except (ValueError, ClientError, NoCredentialsError) as error:
-                raise click.BadParameter(
-                    f"The value provided for file is invalid:\n\n{error}"
-                ) from error
-        else:
-            raise click.UsageError("One of tasks or file should be set")
+        parsed_tasks = await _parse_tasks(
+            tasks=tasks, file=file, s3_resources=s3_resources
+        )
 
-        try:
-            parsed_tasks = InferenceTaskList.model_validate_json(tasks_json)
-        except (ValidationError, JSONDecodeError) as error:
-            raise click.BadParameter(
-                f"The tasks definition is invalid:\n\n{error}"
-            ) from error
+        async with AuxiliaryData(s3_resources=s3_resources):
+            for task in parsed_tasks.root:
+                # Only run one task at a time
+                result = await task.invoke(s3_resources=s3_resources)
 
-        if parsed_tasks.root:
-            async with AuxiliaryData(s3_resources=s3_resources):
-                for task in parsed_tasks.root:
-                    # Only run one task at a time
-                    await task.invoke(s3_resources=s3_resources)
-        else:
-            raise click.UsageError("Empty task list provided")
+                # Fail fast
+                if result.return_code != 0:
+                    logger.error(
+                        f"Stopping due to failure of task {result.pk}"
+                    )
+                    raise SystemExit(0)
 
     logger.info("Model invocation complete")
+
+
+async def _parse_tasks(
+    *, tasks: str, file: str, s3_resources: S3Resources
+) -> InferenceTaskList:
+    tasks_json: str | bytes
+
+    if tasks and file:
+        raise click.UsageError("Only one of tasks or file should be set")
+    elif tasks:
+        tasks_json = tasks
+    elif file:
+        try:
+            tasks_json = await get_s3_file_content(
+                s3_uri=file, s3_resources=s3_resources
+            )
+        except (ValueError, ClientError, NoCredentialsError) as error:
+            raise click.BadParameter(
+                f"The value provided for file is invalid:\n\n{error}"
+            ) from error
+    else:
+        raise click.UsageError("One of tasks or file should be set")
+
+    try:
+        parsed_tasks = InferenceTaskList.model_validate_json(tasks_json)
+    except (ValidationError, JSONDecodeError) as error:
+        raise click.BadParameter(
+            f"The tasks definition is invalid:\n\n{error}"
+        ) from error
+
+    if not parsed_tasks.root:
+        raise click.UsageError("Empty task list provided")
+
+    return parsed_tasks
 
 
 def set_memory_limits() -> None:
