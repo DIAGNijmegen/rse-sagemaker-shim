@@ -1,3 +1,5 @@
+import struct
+import zlib
 from uuid import uuid4
 from zipfile import ZipFile
 
@@ -113,3 +115,97 @@ def test_single_directory(tmp_path):
     safe_extract(src=file, dest=dest)
 
     assert {*dest.rglob("**/*")} == set()
+
+
+def build_zip_with_unsupported_compression(
+    filename: bytes, data: bytes
+) -> bytes:
+    """
+    Build a tiny zip file bytes with compression method 99 for the file entry.
+    """
+    crc = zlib.crc32(data) & 0xFFFFFFFF
+    comp_size = len(data)
+    uncomp_size = len(data)
+    method = 99  # unsupported compression method
+
+    # Local file header
+    # signature, version_needed, flag, compression, mtime, mdate,
+    # crc, comp_size, uncomp_size, filename length, extra length
+    lfh = struct.pack(
+        "<I5H3I2H",
+        0x04034B50,  # local file header signature
+        20,  # version needed to extract
+        0,  # general purpose bit flag
+        method,  # compression method (unsupported)
+        0,  # last mod file time
+        0,  # last mod file date
+        crc,
+        comp_size,
+        uncomp_size,
+        len(filename),
+        0,  # extra length
+    )
+    lfh_part = lfh + filename + data
+
+    # Central directory header
+    cd = struct.pack(
+        "<I6H3I5H2I",
+        0x02014B50,  # central file header signature
+        0,  # version made by
+        20,  # version needed to extract
+        0,  # flag
+        method,  # compression method
+        0,  # mtime
+        0,  # mdate
+        crc,
+        comp_size,
+        uncomp_size,
+        len(filename),
+        0,  # extra len
+        0,  # comment len
+        0,  # disk start
+        0,  # internal attrs
+        0,  # external attrs
+        0,  # relative offset of local header (we set LFH at offset 0)
+    )
+    cd_part = cd + filename
+
+    central_dir_size = len(cd_part)
+    central_dir_offset = len(
+        lfh_part
+    )  # central dir immediately after local header + data
+
+    # End of central directory
+    eocd = struct.pack(
+        "<IHHHHIIH",
+        0x06054B50,  # end of central dir signature
+        0,  # number of this disk
+        0,  # disk where central directory starts
+        1,  # number of central directory records on this disk
+        1,  # total number of central directory records
+        central_dir_size,
+        central_dir_offset,
+        0,  # comment length
+    )
+
+    return lfh_part + cd_part + eocd
+
+
+def test_safe_extract_raises_for_unsupported_compression(tmp_path):
+    filename = b"file.txt"
+    data = b"hello unsupported compression\n"
+    zip_bytes = build_zip_with_unsupported_compression(filename, data)
+
+    zip_path = tmp_path / "bad.zip"
+    zip_path.write_bytes(zip_bytes)
+
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+
+    with pytest.raises(UserSafeError) as excinfo:
+        safe_extract(src=zip_path, dest=dest_dir)
+
+    assert (
+        str(excinfo.value)
+        == "Zip file contains an unsupported compression method"
+    )
