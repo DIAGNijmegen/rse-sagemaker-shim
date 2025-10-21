@@ -29,7 +29,7 @@ import aioboto3
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
-from sagemaker_shim.exceptions import ZipExtractionError
+from sagemaker_shim.exceptions import UserSafeError, ZipExtractionError
 from sagemaker_shim.extract import safe_extract
 from sagemaker_shim.logging import STDOUT_LEVEL
 
@@ -665,25 +665,26 @@ class InferenceTask(ProcUserMixin, BaseModel):
         try:
             self.reset_io()
 
+            error_inference_result = InferenceResult(
+                pk=self.pk,
+                return_code=1,
+                outputs=[],
+                exec_duration=None,
+            )
+
             try:
                 await self.download_input(s3_resources=s3_resources)
             except ExceptionGroup as exception_group:
-                zip_group, rest = exception_group.split(ZipExtractionError)
+                user_safe_errors, rest = exception_group.split(UserSafeError)
 
-                if zip_group:
-                    for exception in zip_group.exceptions:
+                if user_safe_errors:
+                    for exception in user_safe_errors.exceptions:
                         self.log_external(
                             level=logging.ERROR, msg=str(exception)
                         )
-                    return InferenceResult(
-                        pk=self.pk,
-                        return_code=1,
-                        outputs=[],
-                        exec_duration=None,
-                    )
+                    return error_inference_result
 
                 if rest:
-                    # re-raise any exceptions that were not ZipExtractionError
                     raise rest
 
             logger.info(f"Calling {self.proc_args=}")
@@ -698,12 +699,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 self.log_external(
                     level=logging.ERROR, msg="Time limit exceeded"
                 )
-                return InferenceResult(
-                    pk=self.pk,
-                    return_code=1,
-                    outputs=[],
-                    exec_duration=None,
-                )
+                return error_inference_result
 
             logger.info(f"{return_code=}")
 
