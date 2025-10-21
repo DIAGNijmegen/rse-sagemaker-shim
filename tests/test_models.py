@@ -536,7 +536,7 @@ def test_reset_linked_input(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_timeout(minio, monkeypatch, capsys):
-    cmd = ["sleep", "5"]
+    cmd = ["sleep", "10"]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
@@ -544,7 +544,7 @@ async def test_timeout(minio, monkeypatch, capsys):
         inputs=[],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
-        timeout=timedelta(),
+        timeout=timedelta(seconds=1),
     )
 
     monkeypatch.setenv(
@@ -566,4 +566,12 @@ async def test_timeout(minio, monkeypatch, capsys):
     assert captured.err == (
         '{"log": "Time limit exceeded", "level": "ERROR", "source": "stderr", '
         f'"internal": false, "task": "{pk}"}}\n'
+    )
+    assert (
+        '{"log": "Execution was cancelled", "level": "INFO", "source": "stdout", '
+        '"internal": true, "task": null}' in captured.out
+    )
+    assert (
+        '{"log": "Process group terminated", "level": "INFO", "source": "stdout", '
+        '"internal": true, "task": null}' in captured.out
     )
