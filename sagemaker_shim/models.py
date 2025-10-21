@@ -211,7 +211,16 @@ def clean_path(path: Path) -> None:  # noqa:C901
     )
 
     for symlink in symlinks:
-        symlink.chmod(0o700, follow_symlinks=False)
+        try:
+            symlink.chmod(0o700, follow_symlinks=False)
+        except NotImplementedError as error:
+            if (
+                str(error)
+                == "chmod: follow_symlinks unavailable on this platform"
+            ):
+                pass
+            else:
+                raise
         symlink.unlink()
 
     for file in files:
