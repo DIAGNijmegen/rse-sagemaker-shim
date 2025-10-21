@@ -688,9 +688,22 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
             logger.info(f"Calling {self.proc_args=}")
 
-            exec_start = time.monotonic()
-            return_code = await self.execute()
-            exec_duration = time.monotonic() - exec_start
+            try:
+                exec_start = time.monotonic()
+                return_code = await asyncio.wait_for(
+                    self.execute(), timeout=self.timeout.total_seconds()
+                )
+                exec_duration = time.monotonic() - exec_start
+            except TimeoutError:
+                self.log_external(
+                    level=logging.ERROR, msg="Time limit exceeded"
+                )
+                return InferenceResult(
+                    pk=self.pk,
+                    return_code=1,
+                    outputs=[],
+                    exec_duration=None,
+                )
 
             logger.info(f"{return_code=}")
 
@@ -841,7 +854,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
                     stream=process.stderr, level=STDOUT_LEVEL + 10
                 ),
             )
-        except Exception:
+        except Exception as error:
+            logger.error(f"Killing subprocess: {error=}")
             process.kill()
             raise
         finally:

@@ -51,7 +51,7 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
         "inputs": [],
         "output_bucket_name": minio.output_bucket_name,
         "output_prefix": f"test/{pk}",
-        "timeout": "PT0S",
+        "timeout": "PT10S",
     }
 
     input_path = tmp_path / "input"

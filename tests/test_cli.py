@@ -110,14 +110,14 @@ def test_inference_from_task_list(
             "inputs": [],
             "output_bucket_name": minio.output_bucket_name,
             "output_prefix": f"tasks/{pk1}",
-            "timeout": "PT0S",
+            "timeout": "PT10S",
         },
         {
             "pk": pk2,
             "inputs": [],
             "output_bucket_name": minio.output_bucket_name,
             "output_prefix": f"tasks/{pk2}",
-            "timeout": "PT0S",
+            "timeout": "PT10S",
         },
     ]
 
@@ -157,14 +157,14 @@ def test_inference_from_s3_uri(minio, monkeypatch, cmd, expected_return_code):
             "inputs": [],
             "output_bucket_name": minio.output_bucket_name,
             "output_prefix": f"tasks/{pk1}",
-            "timeout": "PT0S",
+            "timeout": "PT10S",
         },
         {
             "pk": pk2,
             "inputs": [],
             "output_bucket_name": minio.output_bucket_name,
             "output_prefix": f"tasks/{pk2}",
-            "timeout": "PT0S",
+            "timeout": "PT10S",
         },
     ]
 
@@ -209,7 +209,7 @@ def test_logging_setup(minio, monkeypatch):
             "inputs": [],
             "output_bucket_name": minio.output_bucket_name,
             "output_prefix": f"tasks/{pk}",
-            "timeout": "PT0S",
+            "timeout": "PT10S",
         }
     ]
 
@@ -239,7 +239,7 @@ def test_logging_stderr_setup(minio, monkeypatch):
             "inputs": [],
             "output_bucket_name": minio.output_bucket_name,
             "output_prefix": f"tasks/{pk}",
-            "timeout": "PT0S",
+            "timeout": "PT10S",
         }
     ]
 

@@ -359,7 +359,7 @@ async def test_inference_result_upload(
         inputs=[],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
-        timeout=timedelta(),
+        timeout=timedelta(seconds=10),
     )
 
     monkeypatch.setenv(
@@ -410,7 +410,7 @@ async def test_inference_result_signed(
         inputs=[],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
-        timeout=timedelta(),
+        timeout=timedelta(seconds=10),
     )
 
     monkeypatch.setenv(
@@ -484,7 +484,7 @@ async def test_exec_duration_set(
         inputs=[],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
-        timeout=timedelta(),
+        timeout=timedelta(seconds=10),
     )
 
     monkeypatch.setenv(
