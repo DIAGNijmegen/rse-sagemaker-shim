@@ -163,15 +163,64 @@ class ProcUserMixin:
                 ) from error
 
 
-def clean_path(path: Path) -> None:
-    for f in path.glob("*"):
-        if f.is_symlink() or f.is_file():
-            f.chmod(0o700)
-            f.unlink()
-        elif f.is_dir():
-            f.chmod(0o700)
-            clean_path(f)
-            f.rmdir()
+def clean_path(path: Path) -> None:  # noqa:C901
+    def _list_path(
+        path: Path,
+        visited: set[Path],
+        files: set[Path],
+        directories: set[Path],
+        symlinks: set[Path],
+    ) -> None:
+        if path in visited:
+            return
+
+        visited.add(path)
+
+        if not path.exists(follow_symlinks=False):
+            return
+
+        for entry in path.iterdir():
+            full_path = entry.resolve()
+
+            if entry.is_symlink():
+                symlinks.add(entry)
+
+            if full_path.is_file():
+                files.add(full_path)
+            elif full_path.is_dir():
+                directories.add(full_path)
+                _list_path(
+                    path=full_path,
+                    visited=visited,
+                    files=files,
+                    directories=directories,
+                    symlinks=symlinks,
+                )
+
+    visited: set[Path] = set()
+    files: set[Path] = set()
+    directories: set[Path] = set()
+    symlinks: set[Path] = set()
+
+    _list_path(
+        path=path,
+        visited=visited,
+        files=files,
+        directories=directories,
+        symlinks=symlinks,
+    )
+
+    for symlink in symlinks:
+        symlink.chmod(0o700, follow_symlinks=False)
+        symlink.unlink()
+
+    for file in files:
+        file.chmod(0o700)
+        file.unlink()
+
+    for directory in directories:
+        directory.chmod(0o700)
+        directory.rmdir()
 
 
 class S3File(NamedTuple):
