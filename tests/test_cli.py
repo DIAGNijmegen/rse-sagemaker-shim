@@ -121,6 +121,7 @@ def test_good_command_inference_from_task_list(minio, monkeypatch):
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
 
     runner = CliRunner()
     runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
@@ -163,6 +164,7 @@ def test_bad_command_inference_from_task_list(minio, monkeypatch):
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
 
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
@@ -220,6 +222,7 @@ def test_good_command_inference_from_s3_uri(minio, monkeypatch):
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
 
     definition_key = f"{uuid4()}/invocations.json"
 
@@ -274,6 +277,7 @@ def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
 
     definition_key = f"{uuid4()}/invocations.json"
 
@@ -334,6 +338,7 @@ def test_logging_setup(minio, monkeypatch):
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
 
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
@@ -366,6 +371,7 @@ def test_logging_stderr_setup(minio, monkeypatch):
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
 
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
