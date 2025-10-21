@@ -339,7 +339,8 @@ class AuxiliaryData:
         post_clean_directories = [
             Path(d)
             for d in os.environ.get(
-                "GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES", ""
+                "GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES",
+                "/opt/ml/output/data:/opt/ml/model:/opt/ml/input/data/ground_truth",
             ).split(":")
             if d
         ]

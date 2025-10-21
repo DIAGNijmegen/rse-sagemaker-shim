@@ -411,6 +411,7 @@ async def test_model_and_ground_truth_extraction(
 @pytest.mark.asyncio
 async def test_ensure_directories_are_writable_unset(monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES", "")
 
     async with get_s3_resources() as s3_resources:
         async with AuxiliaryData(s3_resources=s3_resources) as d:
