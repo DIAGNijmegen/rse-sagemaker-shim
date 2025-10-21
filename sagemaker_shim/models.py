@@ -667,14 +667,6 @@ class InferenceTask(ProcUserMixin, BaseModel):
         try:
             self.reset_io()
 
-            error_inference_result = InferenceResult(
-                pk=self.pk,
-                return_code=1,
-                outputs=[],
-                exec_duration=None,
-                invoke_duration=None,
-            )
-
             try:
                 await self.download_input(s3_resources=s3_resources)
             except ExceptionGroup as exception_group:
@@ -685,15 +677,22 @@ class InferenceTask(ProcUserMixin, BaseModel):
                         self.log_external(
                             level=logging.ERROR, msg=str(exception)
                         )
-                    return error_inference_result
+                    return InferenceResult(
+                        pk=self.pk,
+                        return_code=1,
+                        outputs=[],
+                        exec_duration=None,
+                        invoke_duration=None,
+                    )
 
                 if rest:
                     raise rest
 
             logger.info(f"Calling {self.proc_args=}")
 
+            exec_start = time.monotonic()
+
             try:
-                exec_start = time.monotonic()
                 return_code = await asyncio.wait_for(
                     self.execute(), timeout=self.timeout.total_seconds()
                 )
@@ -702,7 +701,15 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 self.log_external(
                     level=logging.ERROR, msg="Time limit exceeded"
                 )
-                return error_inference_result
+                return InferenceResult(
+                    pk=self.pk,
+                    return_code=1,
+                    outputs=[],
+                    exec_duration=timedelta(
+                        seconds=time.monotonic() - exec_start
+                    ),
+                    invoke_duration=None,
+                )
 
             logger.info(f"{return_code=}")
 

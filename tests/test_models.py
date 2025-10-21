@@ -560,6 +560,8 @@ async def test_timeout(minio, monkeypatch, capsys):
         result = await task.invoke(s3_resources=s3_resources)
 
     assert result.return_code == 1
+    assert int(result.exec_duration.total_seconds()) == 1
+    assert result.invoke_duration is None  # should only be set for invocation
 
     captured = capsys.readouterr()
     # "Time limit exceeded" must be the last log for the user error
