@@ -164,14 +164,32 @@ class ProcUserMixin:
 
 
 def clean_path(path: Path) -> None:
-    for f in path.glob("*"):
-        if f.is_symlink() or f.is_file():
-            f.chmod(0o700)
-            f.unlink()
-        elif f.is_dir():
-            f.chmod(0o700)
-            clean_path(f)
-            f.rmdir()
+    if not path.exists():
+        return
+
+    for entry in path.iterdir():
+        full_path = entry.resolve()
+
+        if entry.is_symlink():
+            try:
+                entry.chmod(0o700, follow_symlinks=False)
+            except NotImplementedError as error:
+                if (
+                    str(error)
+                    == "chmod: follow_symlinks unavailable on this platform"
+                ):
+                    pass
+                else:
+                    raise
+            entry.unlink()
+
+        if full_path.is_file():
+            full_path.chmod(0o700)
+            full_path.unlink()
+        elif full_path.is_dir():
+            full_path.chmod(0o700)
+            clean_path(path=full_path)
+            full_path.rmdir()
 
 
 class S3File(NamedTuple):
@@ -742,9 +760,15 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
     def reset_io(self) -> None:
         """Resets the input and output directories"""
-        clean_path(path=self.input_path)
-        clean_path(path=self.output_path)
-        self.reset_linked_input()
+        try:
+            clean_path(path=self.input_path)
+            clean_path(path=self.output_path)
+            self.reset_linked_input()
+        except Exception as error:
+            logger.critical(f"Could not reset io: {error}")
+            raise UserSafeError(
+                "The containers input and output directories could not be reset"
+            ) from error
 
     def reset_linked_input(self) -> None:
         """Resets the symlink from the input to the linked directory"""
@@ -900,8 +924,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
             await self._cancel_tasks(tasks=(stdout_task, stderr_task))
             raise
 
-        except Exception:
-            logger.exception("Exception in execution")
+        except Exception as error:
+            logger.critical(f"Exception in execution: {error}")
             await asyncio.shield(
                 self._terminate_group_and_wait(process=process)
             )

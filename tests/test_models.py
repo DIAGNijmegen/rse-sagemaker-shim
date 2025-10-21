@@ -18,6 +18,7 @@ from sagemaker_shim.models import (
     InferenceTask,
     ProcUserMixin,
     ProcUserTarfile,
+    clean_path,
     get_s3_resources,
     validate_bucket_name,
 )
@@ -711,3 +712,104 @@ async def test_user_cmd_missing(minio, monkeypatch, capsys):
         'and CMD instructions does not exist", "level": "ERROR", '
         f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
     )
+
+
+def test_folder_cleanup_with_symlinks(tmp_path):
+    dirty_path = tmp_path / "test"
+    dirty_path.mkdir()
+
+    # Create a target directory
+    target_dir = tmp_path / "target-dir"
+    target_dir.mkdir()
+
+    # Create a symlink to the target directory
+    dir_symlink = dirty_path / "to-target-dir"
+    dir_symlink.symlink_to(target=target_dir, target_is_directory=True)
+
+    # Create a target file
+    target_file = tmp_path / "target-file"
+    target_file.touch()
+
+    # Create a symlink to the target file
+    file_symlink = dirty_path / "to-target-file"
+    file_symlink.symlink_to(target=target_file, target_is_directory=False)
+
+    # Remove the targets so the symlinks do not point at anything
+    target_dir.rmdir()
+    target_file.unlink()
+
+    clean_path(dirty_path)
+
+    assert dirty_path.exists()
+    assert not target_dir.exists()
+    assert not dir_symlink.exists()
+    assert not target_file.exists()
+    assert not file_symlink.exists()
+
+
+def test_symlink_cleanup(tmp_path):
+    dirty_path = tmp_path / "test"
+    dirty_path.mkdir()
+
+    # Create a target directory
+    target_dir = tmp_path / "target-dir"
+    target_dir.mkdir()
+
+    # Create a symlink to the target directory
+    dir_symlink = dirty_path / "to-target-dir"
+    dir_symlink.symlink_to(target=target_dir, target_is_directory=True)
+
+    # Create a target file
+    target_file = tmp_path / "target-file"
+    target_file.touch()
+
+    # Create a symlink to the target file
+    file_symlink = dirty_path / "to-target-file"
+    file_symlink.symlink_to(target=target_file, target_is_directory=False)
+
+    clean_path(dirty_path)
+
+    assert dirty_path.exists()
+    assert not target_dir.exists()
+    assert not dir_symlink.exists()
+    assert not target_file.exists()
+    assert not file_symlink.exists()
+
+
+def test_circular_cleanup(tmp_path):
+    dirty_path = tmp_path / "test"
+    dirty_path.mkdir()
+
+    dirty_path_dir = dirty_path / "here"
+    dirty_path_dir.mkdir()
+
+    # Create a target directory
+    target_dir = tmp_path / "target-dir"
+    target_dir.mkdir()
+
+    target_dir_symlink_back = target_dir / "there"
+    target_dir_symlink_back.symlink_to(
+        dirty_path_dir, target_is_directory=True
+    )
+
+    # Create a symlink to the target directory
+    dir_symlink = dirty_path / "to-target-dir"
+    dir_symlink.symlink_to(target=target_dir, target_is_directory=True)
+
+    # Create a target file
+    target_file = tmp_path / "target-file"
+    target_file.touch()
+
+    # Create a symlink to the target file
+    file_symlink = dirty_path / "to-target-file"
+    file_symlink.symlink_to(target=target_file, target_is_directory=False)
+
+    clean_path(dirty_path)
+
+    assert dirty_path.exists()
+    assert not target_dir.exists()
+    assert not dir_symlink.exists()
+    assert not target_file.exists()
+    assert not file_symlink.exists()
+    assert not dirty_path_dir.exists()
+    assert not target_dir_symlink_back.exists()
