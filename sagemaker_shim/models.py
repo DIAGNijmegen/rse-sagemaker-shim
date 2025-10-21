@@ -164,73 +164,34 @@ class ProcUserMixin:
 
 
 def clean_path(path: Path) -> None:  # noqa:C901
-    def _list_path(
-        path: Path,
-        visited: set[Path],
-        files: set[Path],
-        directories: set[Path],
-        symlinks: set[Path],
-    ) -> None:
-        if path in visited:
-            return
+    if not path.exists(follow_symlinks=False):
+        return
 
-        visited.add(path)
+    for entry in path.iterdir():
+        full_path = entry.resolve()
 
-        if not path.exists(follow_symlinks=False):
-            return
+        if entry.is_symlink():
 
-        for entry in path.iterdir():
-            full_path = entry.resolve()
+            try:
+                entry.chmod(0o700, follow_symlinks=False)
+            except NotImplementedError as error:
+                if (
+                    str(error)
+                    == "chmod: follow_symlinks unavailable on this platform"
+                ):
+                    pass
+                else:
+                    raise
 
-            if entry.is_symlink():
-                symlinks.add(entry)
+            entry.unlink(missing_ok=True)
 
-            if full_path.is_file():
-                files.add(full_path)
-            elif full_path.is_dir():
-                directories.add(full_path)
-                _list_path(
-                    path=full_path,
-                    visited=visited,
-                    files=files,
-                    directories=directories,
-                    symlinks=symlinks,
-                )
-
-    visited: set[Path] = set()
-    files: set[Path] = set()
-    directories: set[Path] = set()
-    symlinks: set[Path] = set()
-
-    _list_path(
-        path=path,
-        visited=visited,
-        files=files,
-        directories=directories,
-        symlinks=symlinks,
-    )
-
-    for symlink in symlinks:
-        try:
-            symlink.chmod(0o700, follow_symlinks=False)
-        except NotImplementedError as error:
-            if (
-                str(error)
-                == "chmod: follow_symlinks unavailable on this platform"
-            ):
-                pass
-            else:
-                raise
-
-        symlink.unlink(missing_ok=True)
-
-    for file in files:
-        file.chmod(0o700)
-        file.unlink(missing_ok=True)
-
-    for directory in directories:
-        directory.chmod(0o700)
-        directory.rmdir()
+        if full_path.is_file():
+            full_path.chmod(0o700)
+            full_path.unlink(missing_ok=True)
+        elif full_path.is_dir():
+            full_path.chmod(0o700)
+            clean_path(path=full_path)
+            full_path.rmdir()
 
 
 class S3File(NamedTuple):
