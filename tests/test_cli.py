@@ -4,6 +4,7 @@ import resource
 from unittest.mock import patch
 from uuid import uuid4
 
+import botocore
 import pytest
 from click.testing import CliRunner
 
@@ -93,16 +94,9 @@ def sync_s3_operation(*, method, **kwargs):
     return _run()
 
 
-@pytest.mark.parametrize(
-    "cmd,expected_return_code",
-    (
-        (["echo", "hello"], 0),
-        (["bash", "-c", "exit 1"], 1),
-    ),
-)
-def test_inference_from_task_list(
-    minio, monkeypatch, cmd, expected_return_code
-):
+def test_good_command_inference_from_task_list(minio, monkeypatch):
+    cmd = ["echo", "hello"]
+    expected_return_code = 0
     pk1, pk2 = str(uuid4()), str(uuid4())
     tasks = [
         {
@@ -142,14 +136,66 @@ def test_inference_from_task_list(
         assert parsed_result["pk"] == pk
 
 
-@pytest.mark.parametrize(
-    "cmd,expected_return_code",
-    (
-        (["echo", "hello"], 0),
-        (["bash", "-c", "exit 1"], 1),
-    ),
-)
-def test_inference_from_s3_uri(minio, monkeypatch, cmd, expected_return_code):
+def test_bad_command_inference_from_task_list(minio, monkeypatch):
+    cmd = ["bash", "-c", "exit 1"]
+    expected_return_code = 1
+    pk1, pk2 = str(uuid4()), str(uuid4())
+    tasks = [
+        {
+            "pk": pk1,
+            "inputs": [],
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": f"tasks/{pk1}",
+            "timeout": "PT10S",
+        },
+        {
+            "pk": pk2,
+            "inputs": [],
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": f"tasks/{pk2}",
+            "timeout": "PT10S",
+        },
+    ]
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
+
+    serialised_invocation = sync_s3_operation(
+        method=get_s3_file_content,
+        s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk1}/.sagemaker_shim/inference_result.json",
+    )
+    parsed_result = json.loads(serialised_invocation)
+
+    assert parsed_result["return_code"] == expected_return_code
+    assert parsed_result["pk"] == pk1
+
+    with pytest.raises(botocore.exceptions.ClientError) as error:
+        sync_s3_operation(
+            method=get_s3_file_content,
+            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk2}/.sagemaker_shim/inference_result.json",
+        )
+
+    assert (
+        str(error.value)
+        == "An error occurred (404) when calling the HeadObject operation: Not Found"
+    )
+    assert (
+        f'{{"log": "Stopping due to failure of task {pk1}", "level": "ERROR", '
+        '"source": "stderr", "internal": true, "task": null}' in result.output
+    )
+    assert result.exit_code == 0
+
+
+def test_good_command_inference_from_s3_uri(minio, monkeypatch):
+    cmd = ["echo", "hello"]
+    expected_return_code = 0
     pk1, pk2 = str(uuid4()), str(uuid4())
     tasks = [
         {
@@ -199,6 +245,75 @@ def test_inference_from_s3_uri(minio, monkeypatch, cmd, expected_return_code):
 
         assert parsed_result["return_code"] == expected_return_code
         assert parsed_result["pk"] == pk
+
+
+def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
+    cmd = ["bash", "-c", "exit 1"]
+    expected_return_code = 1
+    pk1, pk2 = str(uuid4()), str(uuid4())
+    tasks = [
+        {
+            "pk": pk1,
+            "inputs": [],
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": f"tasks/{pk1}",
+            "timeout": "PT10S",
+        },
+        {
+            "pk": pk2,
+            "inputs": [],
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": f"tasks/{pk2}",
+            "timeout": "PT10S",
+        },
+    ]
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+
+    definition_key = f"{uuid4()}/invocations.json"
+
+    sync_s3_operation(
+        method=s3_upload_fileobj,
+        Fileobj=io.BytesIO(json.dumps(tasks).encode("utf-8")),
+        Bucket=minio.input_bucket_name,
+        Key=definition_key,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["invoke", "-f", f"s3://{minio.input_bucket_name}/{definition_key}"],
+    )
+
+    serialised_invocation = sync_s3_operation(
+        method=get_s3_file_content,
+        s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk1}/.sagemaker_shim/inference_result.json",
+    )
+    parsed_result = json.loads(serialised_invocation)
+
+    assert parsed_result["return_code"] == expected_return_code
+    assert parsed_result["pk"] == pk1
+
+    with pytest.raises(botocore.exceptions.ClientError) as error:
+        sync_s3_operation(
+            method=get_s3_file_content,
+            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk2}/.sagemaker_shim/inference_result.json",
+        )
+
+    assert (
+        str(error.value)
+        == "An error occurred (404) when calling the HeadObject operation: Not Found"
+    )
+    assert (
+        f'{{"log": "Stopping due to failure of task {pk1}", "level": "ERROR", '
+        '"source": "stderr", "internal": true, "task": null}' in result.output
+    )
+    assert result.exit_code == 0
 
 
 def test_logging_setup(minio, monkeypatch):
