@@ -48,6 +48,7 @@ async def test_input_download(minio, tmp_path, monkeypatch):
         ],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
+        timeout=timedelta(),
     )
 
     # Prep input bucket
@@ -108,6 +109,7 @@ async def test_input_decompress(minio, tmp_path, monkeypatch):
         ],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
+        timeout=timedelta(),
     )
 
     # Prep input bucket
@@ -168,6 +170,7 @@ async def test_invoke_with_dodgy_file(
         ],
         "output_bucket_name": minio.output_bucket_name,
         "output_prefix": prefix,
+        "timeout": "PT0S",
     }
 
     input_path = tmp_path / "input"
@@ -238,6 +241,7 @@ async def test_invoke_with_non_zip(
         ],
         "output_bucket_name": minio.output_bucket_name,
         "output_prefix": prefix,
+        "timeout": "PT0S",
     }
 
     input_path = tmp_path / "input"
@@ -285,6 +289,7 @@ async def test_output_upload(minio, tmp_path, monkeypatch):
         inputs=[],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
+        timeout=timedelta(),
     )
 
     # Prep output bucket
@@ -354,6 +359,7 @@ async def test_inference_result_upload(
         inputs=[],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
+        timeout=timedelta(),
     )
 
     monkeypatch.setenv(
@@ -404,6 +410,7 @@ async def test_inference_result_signed(
         inputs=[],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
+        timeout=timedelta(),
     )
 
     monkeypatch.setenv(
@@ -477,6 +484,7 @@ async def test_exec_duration_set(
         inputs=[],
         output_bucket_name=minio.output_bucket_name,
         output_prefix=str(prefix),
+        timeout=timedelta(),
     )
 
     monkeypatch.setenv(

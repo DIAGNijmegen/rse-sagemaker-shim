@@ -70,6 +70,7 @@ There are three endpoints:
         ],
         "output_bucket_name": "name-of-output-bucket",
         "output_prefix": "/prefix/of/output/files",
+        "timeout": "PT1H10M30S"
     }
   ```
 
@@ -95,6 +96,7 @@ In both cases the contents of the file or string will be an array of task object
         ],
         "output_bucket_name": "name-of-output-bucket",
         "output_prefix": "/prefix/of/output/files-1",
+        "timeout": "PT1H10M30S",
     },
     {
         "pk": "unique-test-id-2",
@@ -103,6 +105,7 @@ In both cases the contents of the file or string will be an array of task object
         ],
         "output_bucket_name": "name-of-output-bucket",
         "output_prefix": "/prefix/of/output/files-2",
+        "timeout": "PT2H10M30S",
     }
 ]
 ```

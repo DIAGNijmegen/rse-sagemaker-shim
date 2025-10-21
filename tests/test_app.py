@@ -1,6 +1,7 @@
 import logging.config
 from asyncio.streams import _DEFAULT_LIMIT
 from copy import deepcopy
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -50,6 +51,7 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
         "inputs": [],
         "output_bucket_name": minio.output_bucket_name,
         "output_prefix": f"test/{pk}",
+        "timeout": "PT0S",
     }
 
     input_path = tmp_path / "input"
@@ -176,6 +178,7 @@ def test_proc_args(cmd, entrypoint, expected, monkeypatch):
         inputs=[],
         output_bucket_name="test",
         output_prefix="test",
+        timeout=timedelta(),
     )
 
     assert j.proc_args == expected
@@ -202,6 +205,7 @@ def test_unset_cmd_and_entrypoint(envvars, monkeypatch):
         inputs=[],
         output_bucket_name="test",
         output_prefix="test",
+        timeout=timedelta(),
     )
 
     with pytest.raises(ValueError) as e:

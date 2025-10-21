@@ -497,6 +497,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
     inputs: list[InferenceIO]
     output_bucket_name: str
     output_prefix: str
+    timeout: timedelta
 
     @field_validator("output_prefix")
     @classmethod
