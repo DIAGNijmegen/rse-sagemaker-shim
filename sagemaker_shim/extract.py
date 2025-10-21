@@ -4,7 +4,7 @@ import zipfile
 from os.path import commonpath
 from pathlib import Path
 
-from sagemaker_shim.exceptions import ZipExtractionError
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.vendor.werkzeug.security import safe_join
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def safe_extract(*, src: Path, dest: Path) -> None:
                 file_dest = safe_join(str(dest), member["dest"])
 
                 if file_dest is None:
-                    raise ZipExtractionError("Zip file contains invalid paths")
+                    raise UserSafeError("Zip file contains invalid paths")
 
                 # We know that the dest is within the prefix as
                 # safe_join is used, and the destination is already

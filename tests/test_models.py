@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import pytest
 
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import (
     AuxiliaryData,
@@ -269,9 +270,9 @@ def test_put_gid_first():
             "User 'nonExistentUser' not found",
         ),
         (f"nonExistentUser:{os.getgid()}", "User 'nonExistentUser' not found"),
-        ("🙈:🙉", "Invalid user '🙈:🙉'"),
-        ("🙈", "Invalid user '🙈'"),
-        (":🙉", "Invalid user ':🙉'"),
+        ("🙈:🙉", "Invalid container user '🙈:🙉'"),
+        ("🙈", "Invalid container user '🙈'"),
+        (":🙉", "Invalid container user ':🙉'"),
     ),
 )
 def test_proc_user_errors(monkeypatch, user, expected_error):
@@ -287,7 +288,7 @@ def test_proc_user_errors(monkeypatch, user, expected_error):
 
     assert t._user == user
 
-    with pytest.raises(RuntimeError) as error:
+    with pytest.raises(UserSafeError) as error:
         _ = t.proc_user
 
     assert str(error.value) == expected_error
@@ -580,4 +581,42 @@ async def test_timeout(minio, monkeypatch, capsys):
     assert (
         '{"log": "Process group terminated", "level": "INFO", "source": "stdout", '
         '"internal": true, "task": null}' in captured.out
+    )
+
+
+@pytest.mark.asyncio
+async def test_non_existent_user(minio, monkeypatch, capsys):
+    cmd = ["sleep", "10"]
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=str(prefix),
+        timeout=timedelta(seconds=1),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", "-gdfs")
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.invoke(s3_resources=s3_resources)
+
+    assert result.return_code == 1
+    assert int(result.exec_duration.total_seconds()) == 0
+    assert result.invoke_duration is None  # should only be set for invocation
+
+    captured = capsys.readouterr()
+    # "Invalid container user" must be the last log for the user error
+    assert captured.err == (
+        '{"log": "Invalid container user \'-gdfs\'", "level": "ERROR", '
+        f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
     )
