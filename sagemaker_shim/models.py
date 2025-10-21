@@ -487,6 +487,7 @@ class InferenceResult(BaseModel):
     pk: str
     return_code: int
     exec_duration: timedelta | None
+    invoke_duration: timedelta | None
     outputs: list[InferenceIO]
     sagemaker_shim_version: str = version("sagemaker-shim")
 
@@ -671,6 +672,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 return_code=1,
                 outputs=[],
                 exec_duration=None,
+                invoke_duration=None,
             )
 
             try:
@@ -714,6 +716,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 return_code=return_code,
                 outputs=outputs,
                 exec_duration=timedelta(seconds=exec_duration),
+                invoke_duration=None,
             )
         finally:
             self.reset_io()
