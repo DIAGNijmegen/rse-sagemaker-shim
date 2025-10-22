@@ -621,7 +621,7 @@ async def test_non_existent_user(minio, monkeypatch, capsys):
         result = await task.invoke(s3_resources=s3_resources)
 
     assert result.return_code == 1
-    assert int(result.exec_duration.total_seconds()) == 0
+    assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
 
     captured = capsys.readouterr()
@@ -663,7 +663,7 @@ async def test_user_cmd_permission_denied(
         result = await task.invoke(s3_resources=s3_resources)
 
     assert result.return_code == 1
-    assert int(result.exec_duration.total_seconds()) == 0
+    assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
 
     captured = capsys.readouterr()
@@ -702,7 +702,7 @@ async def test_user_cmd_missing(minio, monkeypatch, capsys):
         result = await task.invoke(s3_resources=s3_resources)
 
     assert result.return_code == 1
-    assert int(result.exec_duration.total_seconds()) == 0
+    assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
 
     captured = capsys.readouterr()
@@ -714,7 +714,7 @@ async def test_user_cmd_missing(minio, monkeypatch, capsys):
     )
 
 
-def test_folder_cleanup_with_symlinks(tmp_path):
+def test_folder_cleanup_with_deleted_symlink_targets(tmp_path):
     dirty_path = tmp_path / "test"
     dirty_path.mkdir()
 
@@ -740,7 +740,9 @@ def test_folder_cleanup_with_symlinks(tmp_path):
 
     clean_path(dirty_path)
 
+    assert {*dirty_path.iterdir()} == set()
     assert dirty_path.exists()
+
     assert not target_dir.exists()
     assert not dir_symlink.exists()
     assert not target_file.exists()
@@ -769,27 +771,37 @@ def test_symlink_cleanup(tmp_path):
 
     clean_path(dirty_path)
 
+    assert {*dirty_path.iterdir()} == set()
     assert dirty_path.exists()
-    assert not target_dir.exists()
+
+    assert target_dir.exists()
     assert not dir_symlink.exists()
-    assert not target_file.exists()
+    assert target_file.exists()
     assert not file_symlink.exists()
 
 
 def test_circular_cleanup(tmp_path):
-    dirty_path = tmp_path / "test"
+    dirty_path = tmp_path / "clean-me"
     dirty_path.mkdir()
 
-    dirty_path_dir = dirty_path / "here"
+    dirty_path_dir = dirty_path / "dirty-dir"
     dirty_path_dir.mkdir()
+
+    dirty_path_file = dirty_path / "dirty-file"
+    dirty_path_file.touch()
 
     # Create a target directory
     target_dir = tmp_path / "target-dir"
     target_dir.mkdir()
 
-    target_dir_symlink_back = target_dir / "there"
+    target_dir_symlink_back = target_dir / "dirty-dir"
     target_dir_symlink_back.symlink_to(
         dirty_path_dir, target_is_directory=True
+    )
+
+    target_dir_symlink_file_back = target_dir / "dirty-file"
+    target_dir_symlink_file_back.symlink_to(
+        dirty_path_file, target_is_directory=False
     )
 
     # Create a symlink to the target directory
@@ -806,10 +818,13 @@ def test_circular_cleanup(tmp_path):
 
     clean_path(dirty_path)
 
+    assert {*dirty_path.iterdir()} == set()
     assert dirty_path.exists()
-    assert not target_dir.exists()
+
+    assert target_dir.exists()
     assert not dir_symlink.exists()
-    assert not target_file.exists()
+    assert target_file.exists()
     assert not file_symlink.exists()
     assert not dirty_path_dir.exists()
-    assert not target_dir_symlink_back.exists()
+    assert target_dir_symlink_back.exists(follow_symlinks=False)
+    assert target_dir_symlink_file_back.exists(follow_symlinks=False)

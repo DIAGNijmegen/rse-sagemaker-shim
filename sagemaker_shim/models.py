@@ -182,6 +182,7 @@ def clean_path(path: Path) -> None:
                 else:
                     raise
             entry.unlink()
+            continue
 
         if full_path.is_file():
             full_path.chmod(0o700)
@@ -684,7 +685,23 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         try:
             logger.info(f"Invoking {self.pk=}")
-            inference_result = await self._invoke(s3_resources=s3_resources)
+
+            try:
+                inference_result = await self._invoke(
+                    s3_resources=s3_resources
+                )
+            except* UserSafeError as exception_group:
+                for exception in exception_group.exceptions:
+                    self.log_external(level=logging.ERROR, msg=str(exception))
+
+                inference_result = InferenceResult(
+                    pk=self.pk,
+                    return_code=1,
+                    outputs=[],
+                    exec_duration=None,
+                    invoke_duration=None,
+                )
+
             await self.upload_inference_result(
                 inference_result=inference_result, s3_resources=s3_resources
             )
@@ -701,26 +718,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
         try:
             self.reset_io()
 
-            try:
-                await self.download_input(s3_resources=s3_resources)
-            except ExceptionGroup as exception_group:
-                user_safe_errors, rest = exception_group.split(UserSafeError)
-
-                if user_safe_errors:
-                    for exception in user_safe_errors.exceptions:
-                        self.log_external(
-                            level=logging.ERROR, msg=str(exception)
-                        )
-                    return InferenceResult(
-                        pk=self.pk,
-                        return_code=1,
-                        outputs=[],
-                        exec_duration=None,
-                        invoke_duration=None,
-                    )
-
-                if rest:
-                    raise rest
+            await self.download_input(s3_resources=s3_resources)
 
             logger.info(f"Calling {self.proc_args=}")
 
@@ -730,9 +728,6 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 return_code = await asyncio.wait_for(
                     self.execute(), timeout=self.timeout.total_seconds()
                 )
-            except UserSafeError as error:
-                self.log_external(level=logging.ERROR, msg=str(error))
-                return_code = 1
             except TimeoutError:
                 self.log_external(
                     level=logging.ERROR, msg="Time limit exceeded"
@@ -765,7 +760,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
             clean_path(path=self.output_path)
             self.reset_linked_input()
         except Exception as error:
-            logger.critical(f"Could not reset io: {error}")
+            logger.error(f"Could not reset io: {error}", exc_info=error)
             raise UserSafeError(
                 "The containers input and output directories could not be reset"
             ) from error
@@ -925,7 +920,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
             raise
 
         except Exception as error:
-            logger.critical(f"Exception in execution: {error}")
+            logger.error(f"Exception in execution: {error}", exc_info=error)
             await asyncio.shield(
                 self._terminate_group_and_wait(process=process)
             )
