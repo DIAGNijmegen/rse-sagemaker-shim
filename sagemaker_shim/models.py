@@ -182,6 +182,7 @@ def clean_path(path: Path) -> None:
                 else:
                     raise
             entry.unlink()
+            continue
 
         if full_path.is_file():
             full_path.chmod(0o700)
