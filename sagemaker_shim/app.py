@@ -36,8 +36,13 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with get_s3_resources() as s3_resources:
-        async with AuxiliaryData(s3_resources=s3_resources):
+        auxiliary_data = AuxiliaryData(s3_resources=s3_resources)
+        await auxiliary_data.setup()
+
+        try:
             yield
+        finally:
+            await auxiliary_data.teardown()
 
 
 app = FastAPI(lifespan=lifespan)

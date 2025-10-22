@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import resource
 from unittest.mock import patch
 from uuid import uuid4
@@ -192,7 +193,7 @@ def test_bad_command_inference_from_task_list(minio, monkeypatch):
         f'{{"log": "Stopping due to failure of task {pk1}", "level": "ERROR", '
         '"source": "stderr", "internal": true, "task": null}' in result.output
     )
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_good_command_inference_from_s3_uri(minio, monkeypatch):
@@ -317,7 +318,7 @@ def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
         f'{{"log": "Stopping due to failure of task {pk1}", "level": "ERROR", '
         '"source": "stderr", "internal": true, "task": null}' in result.output
     )
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_logging_setup(minio, monkeypatch):
@@ -440,3 +441,50 @@ def test_memory_limit_defined(minio, monkeypatch):
         '{"log": "Setting memory limit to 1337 MB", "level": "INFO", '
         '"source": "stdout", "internal": true, "task": null}'
     ) in result.output
+
+
+def test_aux_data_failure(minio, monkeypatch, tmp_path):
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    model_key = f"{prefix}/sub/dodgy.tar"
+    model_destination = tmp_path / "model"
+    tasks = [
+        {
+            "pk": pk,
+            "inputs": [],
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": prefix,
+            "timeout": "PT10S",
+        }
+    ]
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_MODEL",
+        f"s3://{minio.input_bucket_name}/{model_key}",
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_MODEL_DEST", str(model_destination)
+    )
+
+    sync_s3_operation(
+        method=s3_upload_fileobj,
+        Fileobj=io.BytesIO(os.urandom(8)),
+        Bucket=minio.input_bucket_name,
+        Key=model_key,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
+
+    assert result.exit_code == 1
+    assert result.stderr.splitlines()[-1] == (
+        '{"log": "Could not setup model: Tarfile could not be extracted", '
+        '"level": "ERROR", "source": "stderr", "internal": false, "task": null}'
+    )
