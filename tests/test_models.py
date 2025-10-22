@@ -621,7 +621,7 @@ async def test_non_existent_user(minio, monkeypatch, capsys):
         result = await task.invoke(s3_resources=s3_resources)
 
     assert result.return_code == 1
-    assert int(result.exec_duration.total_seconds()) == 0
+    assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
 
     captured = capsys.readouterr()
@@ -663,7 +663,7 @@ async def test_user_cmd_permission_denied(
         result = await task.invoke(s3_resources=s3_resources)
 
     assert result.return_code == 1
-    assert int(result.exec_duration.total_seconds()) == 0
+    assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
 
     captured = capsys.readouterr()
@@ -702,7 +702,7 @@ async def test_user_cmd_missing(minio, monkeypatch, capsys):
         result = await task.invoke(s3_resources=s3_resources)
 
     assert result.return_code == 1
-    assert int(result.exec_duration.total_seconds()) == 0
+    assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
 
     captured = capsys.readouterr()
