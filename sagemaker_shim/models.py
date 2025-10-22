@@ -22,7 +22,6 @@ from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
 from tempfile import SpooledTemporaryFile, TemporaryDirectory
-from types import TracebackType
 from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
@@ -309,8 +308,14 @@ async def download_and_extract_tarball(
 
         f.seek(0)
 
-        with ProcUserTarfile.open(fileobj=f, mode="r") as tar:
-            tar.extractall(path=dest, filter="data")
+        try:
+            with ProcUserTarfile.open(fileobj=f, mode="r") as tar:
+                tar.extractall(path=dest, filter="data")
+        except (tarfile.TarError, FileNotFoundError) as error:
+            logger.error(
+                f"Tarfile could not be extracted: {error}", exc_info=error
+            )
+            raise UserSafeError("Tarfile could not be extracted") from error
 
 
 class AuxiliaryData:
@@ -378,23 +383,24 @@ class AuxiliaryData:
         logger.debug(f"{post_clean_directories=}")
         return post_clean_directories
 
-    async def __aenter__(self) -> "AuxiliaryData":
+    async def setup(self) -> None:
         logger.info("Setting up Auxiliary Data")
 
         self.ensure_directories_are_writable()
 
-        async with asyncio.TaskGroup() as task_group:
-            task_group.create_task(self.download_model())
-            task_group.create_task(self.download_ground_truth())
+        try:
+            await self.download_model()
+        except UserSafeError as error:
+            raise UserSafeError(f"Could not setup model: {error}") from error
 
-        return self
+        try:
+            await self.download_ground_truth()
+        except UserSafeError as error:
+            raise UserSafeError(
+                f"Could not setup ground truth: {error}"
+            ) from error
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
+    async def teardown(self) -> None:
         logger.info("Cleaning up Auxiliary Data")
         for p in self.post_clean_directories:
             logger.info(f"Cleaning {p=}")

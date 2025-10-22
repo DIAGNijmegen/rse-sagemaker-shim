@@ -395,12 +395,14 @@ async def test_model_and_ground_truth_extraction(
                 f"{ground_truth_pk}/ground_truth.tar.gz",
             )
 
-        async with AuxiliaryData(s3_resources=s3_resources):
-            downloaded_files = {
-                str(f.relative_to(tmp_path))
-                for f in tmp_path.rglob("**/*")
-                if f.is_file()
-            }
+        auxiliary_data = AuxiliaryData(s3_resources=s3_resources)
+        await auxiliary_data.setup()
+        downloaded_files = {
+            str(f.relative_to(tmp_path))
+            for f in tmp_path.rglob("**/*")
+            if f.is_file()
+        }
+        await auxiliary_data.teardown()
 
     assert downloaded_files == {
         "model/model-file1.txt",
@@ -425,17 +427,18 @@ async def test_ensure_directories_are_writable_unset(monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_POST_CLEAN_DIRECTORIES", "")
 
     async with get_s3_resources() as s3_resources:
-        async with AuxiliaryData(s3_resources=s3_resources) as d:
-            assert d.writable_directories == []
-            assert d.post_clean_directories == []
-            assert d.model_source is None
-            assert d.model_dest == Path("/opt/ml/model")
-            assert not d.model_dest.exists()
-            assert d.ground_truth_source is None
-            assert d.ground_truth_dest == Path(
-                "/opt/ml/input/data/ground_truth"
-            )
-            assert not d.ground_truth_dest.exists()
+        auxiliary_data = AuxiliaryData(s3_resources=s3_resources)
+
+        assert auxiliary_data.writable_directories == []
+        assert auxiliary_data.post_clean_directories == []
+        assert auxiliary_data.model_source is None
+        assert auxiliary_data.model_dest == Path("/opt/ml/model")
+        assert not auxiliary_data.model_dest.exists()
+        assert auxiliary_data.ground_truth_source is None
+        assert auxiliary_data.ground_truth_dest == Path(
+            "/opt/ml/input/data/ground_truth"
+        )
+        assert not auxiliary_data.ground_truth_dest.exists()
 
 
 @pytest.mark.asyncio
@@ -456,8 +459,8 @@ async def test_ensure_directories_are_writable_set(
     )
 
     async with get_s3_resources() as s3_resources:
-        async with AuxiliaryData(s3_resources=s3_resources) as d:
-            assert d.writable_directories == expected
+        auxiliary_data = AuxiliaryData(s3_resources=s3_resources)
+        assert auxiliary_data.writable_directories == expected
 
 
 @pytest.mark.asyncio
@@ -480,8 +483,9 @@ async def test_ensure_directories_are_writable(tmp_path, monkeypatch):
     )
 
     async with get_s3_resources() as s3_resources:
-        async with AuxiliaryData(s3_resources=s3_resources):
-            pass
+        auxiliary_data = AuxiliaryData(s3_resources=s3_resources)
+        await auxiliary_data.setup()
+        await auxiliary_data.teardown()
 
     assert data.stat().st_mode == 0o40777
     assert model.stat().st_mode == 0o40777

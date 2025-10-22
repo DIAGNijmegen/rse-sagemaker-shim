@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError, NoCredentialsError
 from pydantic import ValidationError
 
 from sagemaker_shim.app import app
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import (
     AuxiliaryData,
@@ -86,7 +87,16 @@ async def invoke(tasks: str, file: str) -> None:
             tasks=tasks, file=file, s3_resources=s3_resources
         )
 
-        async with AuxiliaryData(s3_resources=s3_resources):
+        auxiliary_data = AuxiliaryData(s3_resources=s3_resources)
+
+        try:
+            try:
+                await auxiliary_data.setup()
+            except* UserSafeError as exception_group:
+                for exception in exception_group.exceptions:
+                    logger.error(msg=str(exception), extra={"internal": False})
+                raise SystemExit(1) from exception_group
+
             for task in parsed_tasks.root:
                 # Only run one task at a time
                 result = await task.invoke(s3_resources=s3_resources)
@@ -96,9 +106,11 @@ async def invoke(tasks: str, file: str) -> None:
                     logger.error(
                         f"Stopping due to failure of task {result.pk}"
                     )
-                    raise SystemExit(0)
+                    raise SystemExit(result.return_code)
 
-    logger.info("Model invocation complete")
+            logger.info("Model invocation complete")
+        finally:
+            await auxiliary_data.teardown()
 
 
 async def _parse_tasks(
