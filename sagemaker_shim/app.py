@@ -23,6 +23,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status
 
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceResult,
@@ -37,7 +38,12 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with get_s3_resources() as s3_resources:
         auxiliary_data = AuxiliaryData(s3_resources=s3_resources)
-        await auxiliary_data.setup()
+
+        try:
+            await auxiliary_data.setup()
+        except UserSafeError as error:
+            logger.error(msg=str(error), extra={"internal": False})
+            raise SystemExit(1) from error
 
         try:
             yield

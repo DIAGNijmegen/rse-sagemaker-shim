@@ -92,10 +92,9 @@ async def invoke(tasks: str, file: str) -> None:
         try:
             try:
                 await auxiliary_data.setup()
-            except* UserSafeError as exception_group:
-                for exception in exception_group.exceptions:
-                    logger.error(msg=str(exception), extra={"internal": False})
-                raise SystemExit(1) from exception_group
+            except UserSafeError as error:
+                logger.error(msg=str(error), extra={"internal": False})
+                raise SystemExit(1) from error
 
             for task in parsed_tasks.root:
                 # Only run one task at a time
