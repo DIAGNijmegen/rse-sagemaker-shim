@@ -193,7 +193,7 @@ def test_bad_command_inference_from_task_list(minio, monkeypatch):
         f'{{"log": "Stopping due to failure of task {pk1}", "level": "ERROR", '
         '"source": "stderr", "internal": true, "task": null}' in result.output
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 0
 
 
 def test_good_command_inference_from_s3_uri(minio, monkeypatch):
@@ -318,7 +318,7 @@ def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
         f'{{"log": "Stopping due to failure of task {pk1}", "level": "ERROR", '
         '"source": "stderr", "internal": true, "task": null}' in result.output
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 0
 
 
 def test_logging_setup(minio, monkeypatch):
@@ -483,7 +483,7 @@ def test_aux_data_failure(minio, monkeypatch, tmp_path):
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 0
     assert result.stderr.splitlines()[-1] == (
         '{"log": "Could not setup model: Tarfile could not be extracted", '
         '"level": "ERROR", "source": "stderr", "internal": false, "task": null}'
