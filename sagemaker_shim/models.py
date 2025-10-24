@@ -312,9 +312,7 @@ async def download_and_extract_tarball(
             with ProcUserTarfile.open(fileobj=f, mode="r") as tar:
                 tar.extractall(path=dest, filter="data")
         except (tarfile.TarError, FileNotFoundError) as error:
-            logger.error(
-                f"Tarfile could not be extracted: {error}", exc_info=error
-            )
+            logger.error(error, exc_info=True)
             raise UserSafeError("Tarfile could not be extracted") from error
 
 
@@ -766,7 +764,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
             clean_path(path=self.output_path)
             self.reset_linked_input()
         except Exception as error:
-            logger.error(f"Could not reset io: {error}", exc_info=error)
+            logger.error(error, exc_info=True)
             raise UserSafeError(
                 "The containers input and output directories could not be reset"
             ) from error
@@ -926,7 +924,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
             raise
 
         except Exception as error:
-            logger.error(f"Exception in execution: {error}", exc_info=error)
+            logger.error(error, exc_info=True)
             await asyncio.shield(
                 self._terminate_group_and_wait(process=process)
             )
@@ -960,8 +958,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
         except Exception:
             try:
                 process.terminate()
-            except Exception:
-                logger.info("process.terminate() failed", exc_info=True)
+            except Exception as error:
+                logger.info(error, exc_info=True)
 
         try:
             # Wait for graceful termination
@@ -980,10 +978,8 @@ class InferenceTask(ProcUserMixin, BaseModel):
                 "Process group did not exit within grace period; "
                 "escalating to SIGKILL"
             )
-        except Exception:
-            logger.info(
-                "Error while waiting for process.wait()", exc_info=True
-            )
+        except Exception as error:
+            logger.info(error, exc_info=True)
 
         try:
             os.killpg(process.pid, signal.SIGKILL)
@@ -992,16 +988,14 @@ class InferenceTask(ProcUserMixin, BaseModel):
         except Exception:
             try:
                 process.kill()
-            except Exception:
-                logger.info("process.kill() failed", exc_info=True)
+            except Exception as error:
+                logger.info(error, exc_info=True)
 
         try:
             await process.wait()
             logger.info("Process group killed")
-        except Exception:
-            logger.warning(
-                "Failed awaiting process.wait() after kill", exc_info=True
-            )
+        except Exception as error:
+            logger.warning(error, exc_info=True)
 
     async def _stream_to_external(
         self, *, stream: asyncio.StreamReader | None, level: int
