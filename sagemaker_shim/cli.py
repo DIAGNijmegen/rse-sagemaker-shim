@@ -99,7 +99,7 @@ async def invoke(tasks: str, file: str) -> None:
 
             for task in parsed_tasks.root:
                 # Only run one task at a time
-                result = await task.invoke(s3_resources=s3_resources)
+                result = await task.run_inference(s3_resources=s3_resources)
 
                 # Fail fast
                 if result.return_code != 0:

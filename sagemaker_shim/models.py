@@ -681,17 +681,17 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return env
 
-    async def invoke(self, *, s3_resources: S3Resources) -> InferenceResult:
+    async def run_inference(self, *, s3_resources: S3Resources) -> InferenceResult:
         """Run the inference on a single case"""
         logger.info(f"Awaiting lock for {self.pk=}")
 
         await asyncio.wait_for(lock.acquire(), timeout=1.0)
 
         try:
-            logger.info(f"Invoking {self.pk=}")
+            logger.info(f"Running inference for {self.pk=}")
 
             try:
-                inference_result = await self._invoke(
+                inference_result = await self._run_inference(
                     s3_resources=s3_resources
                 )
             except* UserSafeError as exception_group:
@@ -716,7 +716,7 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return inference_result
 
-    async def _invoke(  # noqa:C901
+    async def _run_inference(  # noqa:C901
         self, *, s3_resources: S3Resources
     ) -> InferenceResult:
         try:
