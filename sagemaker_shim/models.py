@@ -681,7 +681,9 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return env
 
-    async def run_inference(self, *, s3_resources: S3Resources) -> InferenceResult:
+    async def run_inference(
+        self, *, s3_resources: S3Resources
+    ) -> InferenceResult:
         """Run the inference on a single case"""
         logger.info(f"Awaiting lock for {self.pk=}")
 

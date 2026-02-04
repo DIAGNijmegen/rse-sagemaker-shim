@@ -438,9 +438,7 @@ async def test_inference_result_signed(
     data = await response["Body"].read()
     meta_sig = response["Metadata"]["signature_hmac_sha256"]
 
-    assert result == InferenceResult(
-        **json.loads(data.decode("utf-8"))
-    )
+    assert result == InferenceResult(**json.loads(data.decode("utf-8")))
 
     calc = hmac.new(
         key=bytes.fromhex(signing_key), msg=data, digestmod=hashlib.sha256
