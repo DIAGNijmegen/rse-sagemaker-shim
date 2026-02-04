@@ -75,8 +75,8 @@ async def execution_parameters() -> dict[str, int | str]:
 
 @app.post("/invocations")
 async def invocations(task: InferenceTask) -> InferenceResult:
-    logger.debug("invcations called")
+    logger.debug("invocations called")
     logger.debug(f"{task=}")
 
     async with get_s3_resources() as s3_resources:
-        return await task.invoke(s3_resources=s3_resources)
+        return await task.run_inference(s3_resources=s3_resources)

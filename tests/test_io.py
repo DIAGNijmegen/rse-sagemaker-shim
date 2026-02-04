@@ -372,7 +372,7 @@ async def test_inference_result_upload(
     serialised_invocation = io.BytesIO()
 
     async with get_s3_resources() as s3_resources:
-        direct_invocation = await task.invoke(s3_resources=s3_resources)
+        result = await task.run_inference(s3_resources=s3_resources)
 
         async with s3_resources.semaphore:
             await s3_resources.client.download_fileobj(
@@ -381,12 +381,12 @@ async def test_inference_result_upload(
                 Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
             )
 
-    assert direct_invocation.return_code == expected_return_code
-    assert direct_invocation.pk == pk
+    assert result.return_code == expected_return_code
+    assert result.pk == pk
 
     serialised_invocation.seek(0)
 
-    assert direct_invocation == InferenceResult(
+    assert result == InferenceResult(
         **json.loads(serialised_invocation.read().decode("utf-8"))
     )
 
@@ -424,7 +424,7 @@ async def test_inference_result_signed(
     )
 
     async with get_s3_resources() as s3_resources:
-        direct_invocation = await task.invoke(s3_resources=s3_resources)
+        result = await task.run_inference(s3_resources=s3_resources)
 
         async with s3_resources.semaphore:
             response = await s3_resources.client.get_object(
@@ -432,15 +432,13 @@ async def test_inference_result_signed(
                 Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
             )
 
-    assert direct_invocation.return_code == expected_return_code
-    assert direct_invocation.pk == pk
+    assert result.return_code == expected_return_code
+    assert result.pk == pk
 
     data = await response["Body"].read()
     meta_sig = response["Metadata"]["signature_hmac_sha256"]
 
-    assert direct_invocation == InferenceResult(
-        **json.loads(data.decode("utf-8"))
-    )
+    assert result == InferenceResult(**json.loads(data.decode("utf-8")))
 
     calc = hmac.new(
         key=bytes.fromhex(signing_key), msg=data, digestmod=hashlib.sha256
@@ -498,7 +496,7 @@ async def test_exec_duration_set(
     )
 
     async with get_s3_resources() as s3_resources:
-        direct_invocation = await task.invoke(s3_resources=s3_resources)
+        result = await task.run_inference(s3_resources=s3_resources)
 
         async with s3_resources.semaphore:
             response = await s3_resources.client.get_object(
@@ -506,12 +504,12 @@ async def test_exec_duration_set(
                 Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
             )
 
-    assert direct_invocation.return_code == expected_return_code
-    assert direct_invocation.pk == pk
+    assert result.return_code == expected_return_code
+    assert result.pk == pk
 
     data = json.loads(await response["Body"].read())
-    duration = direct_invocation.exec_duration
-    duration_string = str(direct_invocation.exec_duration.total_seconds())
+    duration = result.exec_duration
+    duration_string = str(result.exec_duration.total_seconds())
 
     assert duration > timedelta(milliseconds=1)
     assert duration < timedelta(seconds=10)

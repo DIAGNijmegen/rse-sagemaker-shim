@@ -576,7 +576,7 @@ async def test_timeout(minio, monkeypatch, capsys):
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
-        result = await task.invoke(s3_resources=s3_resources)
+        result = await task.run_inference(s3_resources=s3_resources)
 
     assert result.return_code == 1
     assert int(result.exec_duration.total_seconds()) == 1
@@ -622,7 +622,7 @@ async def test_non_existent_user(minio, monkeypatch, capsys):
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
-        result = await task.invoke(s3_resources=s3_resources)
+        result = await task.run_inference(s3_resources=s3_resources)
 
     assert result.return_code == 1
     assert result.exec_duration is None
@@ -664,7 +664,7 @@ async def test_user_cmd_permission_denied(
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
-        result = await task.invoke(s3_resources=s3_resources)
+        result = await task.run_inference(s3_resources=s3_resources)
 
     assert result.return_code == 1
     assert result.exec_duration is None
@@ -703,7 +703,7 @@ async def test_user_cmd_missing(minio, monkeypatch, capsys):
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
-        result = await task.invoke(s3_resources=s3_resources)
+        result = await task.run_inference(s3_resources=s3_resources)
 
     assert result.return_code == 1
     assert result.exec_duration is None
