@@ -18,6 +18,7 @@ from base64 import b64decode
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from enum import StrEnum
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
@@ -48,6 +49,11 @@ BUCKET_NAME_REGEX = re.compile(r"^[a-zA-Z0-9.\-_]{1,255}$")
 BUCKET_ARN_REGEX = re.compile(
     r"^arn:(aws).*:(s3|s3-object-lambda):[a-z\-0-9]*:[0-9]{12}:accesspoint[/:][a-zA-Z0-9\-.]{1,63}$|^arn:(aws).*:s3-outposts:[a-z\-0-9]+:[0-9]{12}:outpost[/:][a-zA-Z0-9\-]{1,63}[/:]accesspoint[/:][a-zA-Z0-9\-]{1,63}$"
 )
+
+
+class APIMethod(StrEnum):
+    INVOKE = "invoke"
+    EXEC = "exec"
 
 
 class UserInfo(NamedTuple):
