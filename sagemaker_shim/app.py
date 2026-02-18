@@ -28,10 +28,14 @@ from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceResult,
     InferenceTask,
+    UserProcess,
     get_s3_resources,
 )
 
 logger = logging.getLogger(__name__)
+
+
+user_process = UserProcess()
 
 
 @asynccontextmanager
@@ -47,9 +51,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             raise SystemExit(0) from error
 
         try:
+            await user_process.setup()
+        except UserSafeError as error:
+            logger.error(msg=str(error), extra={"internal": False})
+            # If subprocess errors are handled our process should exit cleanly
+            raise SystemExit(0) from error
+
+        try:
             yield
         finally:
             await auxiliary_data.teardown()
+            await user_process.teardown()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -79,4 +91,6 @@ async def invocations(task: InferenceTask) -> InferenceResult:
     logger.debug(f"{task=}")
 
     async with get_s3_resources() as s3_resources:
-        return await task.run_inference(s3_resources=s3_resources)
+        return await task.run_inference(
+            user_process=user_process, s3_resources=s3_resources
+        )
