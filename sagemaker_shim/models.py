@@ -539,7 +539,7 @@ class UserProcess(ProcUserMixin):
     process: asyncio.subprocess.Process
     stdout_task: asyncio.Task[None]
     stderr_task: asyncio.Task[None]
-    current_task: "InferenceTask"
+    current_task_pk: str
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
@@ -659,8 +659,8 @@ class UserProcess(ProcUserMixin):
         else:
             raise NotImplementedError
 
-    async def run_inference(self, *, task: "InferenceTask") -> int:
-        self.current_task = task
+    async def run_inference(self, *, task_pk: str) -> int:
+        self.current_task_pk = task_pk
         if self.api_method == APIMethod.EXEC:
             return await self.execute()
         else:
@@ -794,7 +794,7 @@ class UserProcess(ProcUserMixin):
         logger.log(
             level=level,
             msg=msg,
-            extra={"internal": False, "task": self.current_task},
+            extra={"internal": False, "task_pk": self.current_task_pk},
         )
 
     async def execute(self) -> int:
@@ -936,7 +936,7 @@ class InferenceTask(BaseModel):
 
             try:
                 return_code = await asyncio.wait_for(
-                    user_process.run_inference(task=self),
+                    user_process.run_inference(task_pk=self.pk),
                     timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
@@ -1078,7 +1078,7 @@ class InferenceTask(BaseModel):
     def log_external(self, *, level: int, msg: str) -> None:
         """Send a message to the external logger"""
         logger.log(
-            level=level, msg=msg, extra={"internal": False, "task": self}
+            level=level, msg=msg, extra={"internal": False, "task_pk": self.pk}
         )
 
 
