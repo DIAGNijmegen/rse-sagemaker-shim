@@ -35,7 +35,7 @@ from sagemaker_shim.models import (
 logger = logging.getLogger(__name__)
 
 
-USER_PROCESS: UserProcess = None  # type: ignore[assignment]
+USER_PROCESS: UserProcess | None = None
 
 
 @asynccontextmanager
@@ -92,6 +92,9 @@ async def execution_parameters() -> dict[str, int | str]:
 async def invocations(task: InferenceTask) -> InferenceResult:
     logger.debug("invocations called")
     logger.debug(f"{task=}")
+
+    if USER_PROCESS is None:
+        raise RuntimeError("USER_PROCESS should be initialized")
 
     async with get_s3_resources() as s3_resources:
         return await task.run_inference(
