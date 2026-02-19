@@ -827,7 +827,7 @@ class UserProcess(ProcUserMixin):
             await asyncio.shield(self._terminate_group_and_wait())
 
 
-class InferenceTask(ProcUserMixin, BaseModel):
+class InferenceTask(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     pk: str
