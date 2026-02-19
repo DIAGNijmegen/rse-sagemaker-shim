@@ -93,7 +93,7 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
 
     response = client.post("/invocations", json=data)
 
-    # The logs need to be interprable by grand challenge
+    # The logs need to be interpretable by grand challenge
     captured = capsys.readouterr()
     assert (
         '{"log": "hellostdout", "level": "INFO", "source": "stdout", '
