@@ -535,6 +535,13 @@ class InferenceResult(BaseModel):
     sagemaker_shim_version: str = version("sagemaker-shim")
 
 
+def log_external(*, level: int, msg: str, task_pk: str) -> None:
+    """Send a message to the external logger"""
+    logger.log(
+        level=level, msg=msg, extra={"internal": False, "task_pk": task_pk}
+    )
+
+
 class UserProcess(ProcUserMixin):
     process: asyncio.subprocess.Process
     stdout_task: asyncio.Task[None]
@@ -775,27 +782,21 @@ class UserProcess(ProcUserMixin):
             try:
                 line = await stream.readline()
             except ValueError:
-                self.log_external(
+                log_external(
                     level=logging.WARNING,
                     msg="WARNING: A log line was skipped as it was too long",
+                    task_pk=self.current_task_pk,
                 )
                 continue
 
             if not line:
                 break
 
-            self.log_external(
+            log_external(
                 level=level,
                 msg=line.replace(b"\x00", b"").decode("utf-8"),
+                task_pk=self.current_task_pk,
             )
-
-    def log_external(self, *, level: int, msg: str) -> None:
-        """Send a message to the external logger"""
-        logger.log(
-            level=level,
-            msg=msg,
-            extra={"internal": False, "task_pk": self.current_task_pk},
-        )
 
     async def execute(self) -> int:
         """
@@ -904,7 +905,11 @@ class InferenceTask(BaseModel):
                 )
             except* UserSafeError as exception_group:
                 for exception in exception_group.exceptions:
-                    self.log_external(level=logging.ERROR, msg=str(exception))
+                    log_external(
+                        level=logging.ERROR,
+                        msg=str(exception),
+                        task_pk=self.pk,
+                    )
 
                 inference_result = InferenceResult(
                     pk=self.pk,
@@ -940,8 +945,10 @@ class InferenceTask(BaseModel):
                     timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
-                self.log_external(
-                    level=logging.ERROR, msg="Time limit exceeded"
+                log_external(
+                    level=logging.ERROR,
+                    msg="Time limit exceeded",
+                    task_pk=self.pk,
                 )
                 return_code = 1
 
@@ -1074,12 +1081,6 @@ class InferenceTask(BaseModel):
                     "Metadata": {"signature_hmac_sha256": signature},
                 },
             )
-
-    def log_external(self, *, level: int, msg: str) -> None:
-        """Send a message to the external logger"""
-        logger.log(
-            level=level, msg=msg, extra={"internal": False, "task_pk": self.pk}
-        )
 
 
 class InferenceTaskList(RootModel[list[InferenceTask]]):
