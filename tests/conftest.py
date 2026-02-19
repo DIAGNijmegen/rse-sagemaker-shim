@@ -11,7 +11,8 @@ import pytest
 from docker.models.containers import Container
 from fastapi.testclient import TestClient
 
-from sagemaker_shim.app import app
+import sagemaker_shim.app
+from sagemaker_shim.models import UserProcess
 
 
 def pytest_sessionstart(session):
@@ -29,7 +30,9 @@ def pytest_sessionstart(session):
 
 @pytest.fixture
 def client():
-    return TestClient(app=app)
+    sagemaker_shim.app.USER_PROCESS = UserProcess()
+
+    return TestClient(app=sagemaker_shim.app.app)
 
 
 class Minio(NamedTuple):
