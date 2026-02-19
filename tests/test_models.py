@@ -18,6 +18,7 @@ from sagemaker_shim.models import (
     InferenceTask,
     ProcUserMixin,
     ProcUserTarfile,
+    UserProcess,
     clean_path,
     get_s3_resources,
     validate_bucket_name,
@@ -80,36 +81,24 @@ def test_patching_ld_library_path(monkeypatch):
     """Subprocess must run with the original LD_LIBRARY_PATH set"""
     monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "special")
 
-    t = InferenceTask(
-        pk="test",
-        inputs=[],
-        output_bucket_name="test",
-        output_prefix="test",
-        timeout=timedelta(),
-    )
+    p = UserProcess()
 
     env = os.environ.copy()
 
     assert env["LD_LIBRARY_PATH_ORIG"] == "special"
     assert "LD_LIBRARY_PATH" not in env
-    assert t.proc_env["LD_LIBRARY_PATH"] == "special"
+    assert p.proc_env["LD_LIBRARY_PATH"] == "special"
 
 
 def test_removing_ld_library_path(monkeypatch):
     """Subprocess must have LD_LIBRARY_PATH removed if set"""
     monkeypatch.setenv("LD_LIBRARY_PATH", "present")
 
-    t = InferenceTask(
-        pk="test",
-        inputs=[],
-        output_bucket_name="test",
-        output_prefix="test",
-        timeout=timedelta(),
-    )
+    p = UserProcess()
 
     env = os.environ.copy()
 
-    assert "LD_LIBRARY_PATH" not in t.proc_env
+    assert "LD_LIBRARY_PATH" not in p.proc_env
     assert env["LD_LIBRARY_PATH"] == "present"
 
 
@@ -117,20 +106,14 @@ def test_all_grand_challenge_env_vars_removed(monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", "somekey")
     monkeypatch.setenv("grand_challenge_foo", "bar")
 
-    t = InferenceTask(
-        pk="test",
-        inputs=[],
-        output_bucket_name="test",
-        output_prefix="test",
-        timeout=timedelta(),
-    )
+    p = UserProcess()
 
     env = os.environ.copy()
 
     assert env["GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX"] == "somekey"
     assert env["grand_challenge_foo"] == "bar"
-    assert "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX" not in t.proc_env
-    assert "grand_challenge_foo" not in t.proc_env
+    assert "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX" not in p.proc_env
+    assert "grand_challenge_foo" not in p.proc_env
 
 
 ROOT_HOME = pwd.getpwnam("root").pw_dir
@@ -204,23 +187,17 @@ def test_proc_user(
 ):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", user)
 
-    t = InferenceTask(
-        pk="test",
-        inputs=[],
-        output_bucket_name="test",
-        output_prefix="test",
-        timeout=timedelta(),
-    )
+    p = UserProcess()
 
-    assert t._user == user
-    assert t.proc_user.uid == expected_user
-    assert t.proc_user.gid == expected_group
-    assert t.proc_user.home == expected_home
-    assert t.extra_groups == expected_extra_groups
-    assert None not in t.extra_groups
+    assert p._user == user
+    assert p.proc_user.uid == expected_user
+    assert p.proc_user.gid == expected_group
+    assert p.proc_user.home == expected_home
+    assert p.extra_groups == expected_extra_groups
+    assert None not in p.extra_groups
 
     with ProcUserTarfile.open(fileobj=algorithm_model, mode="r") as tar:
-        assert tar.proc_user == t.proc_user
+        assert tar.proc_user == p.proc_user
 
 
 def test_put_gid_first():
@@ -288,52 +265,34 @@ def test_put_gid_first():
 def test_proc_user_errors(monkeypatch, user, expected_error):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", user)
 
-    t = InferenceTask(
-        pk="test",
-        inputs=[],
-        output_bucket_name="test",
-        output_prefix="test",
-        timeout=timedelta(),
-    )
+    p = UserProcess()
 
-    assert t._user == user
+    assert p._user == user
 
     with pytest.raises(UserSafeError) as error:
-        _ = t.proc_user
+        _ = p.proc_user
 
     assert str(error.value) == expected_error
 
 
 def test_proc_user_unset(algorithm_model):
-    t = InferenceTask(
-        pk="test",
-        inputs=[],
-        output_bucket_name="test",
-        output_prefix="test",
-        timeout=timedelta(),
-    )
+    p = UserProcess()
 
-    assert t._user == ""
-    assert t.proc_user.uid is None
-    assert t.proc_user.gid is None
-    assert t.proc_user.home is None
+    assert p._user == ""
+    assert p.proc_user.uid is None
+    assert p.proc_user.gid is None
+    assert p.proc_user.home is None
 
     with ProcUserTarfile.open(fileobj=algorithm_model, mode="r") as tar:
-        assert tar.proc_user == t.proc_user
+        assert tar.proc_user == p.proc_user
 
 
 def test_home_is_set(monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", "root")
 
-    t = InferenceTask(
-        pk="test",
-        inputs=[],
-        output_bucket_name="test",
-        output_prefix="test",
-        timeout=timedelta(),
-    )
+    p = UserProcess()
 
-    assert t.proc_env["HOME"] == pwd.getpwnam("root").pw_dir
+    assert p.proc_env["HOME"] == pwd.getpwnam("root").pw_dir
 
 
 @pytest.mark.asyncio
@@ -558,6 +517,7 @@ async def test_timeout(minio, monkeypatch, capsys):
     cmd = ["sleep", "10"]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
+    process = UserProcess()
     task = InferenceTask(
         pk=pk,
         inputs=[],
@@ -576,7 +536,9 @@ async def test_timeout(minio, monkeypatch, capsys):
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
-        result = await task.run_inference(s3_resources=s3_resources)
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
 
     assert result.return_code == 1
     assert int(result.exec_duration.total_seconds()) == 1
@@ -603,6 +565,7 @@ async def test_non_existent_user(minio, monkeypatch, capsys):
     cmd = ["sleep", "10"]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
+    process = UserProcess()
     task = InferenceTask(
         pk=pk,
         inputs=[],
@@ -622,7 +585,9 @@ async def test_non_existent_user(minio, monkeypatch, capsys):
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
-        result = await task.run_inference(s3_resources=s3_resources)
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
 
     assert result.return_code == 1
     assert result.exec_duration is None
@@ -646,6 +611,7 @@ async def test_user_cmd_permission_denied(
     cmd = [str(tmp_path / "no_perms.sh")]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
+    process = UserProcess()
     task = InferenceTask(
         pk=pk,
         inputs=[],
@@ -664,7 +630,9 @@ async def test_user_cmd_permission_denied(
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
-        result = await task.run_inference(s3_resources=s3_resources)
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
 
     assert result.return_code == 1
     assert result.exec_duration is None
@@ -685,6 +653,7 @@ async def test_user_cmd_missing(minio, monkeypatch, capsys):
     cmd = ["doesnt_exist.sh"]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
+    process = UserProcess()
     task = InferenceTask(
         pk=pk,
         inputs=[],
@@ -703,7 +672,9 @@ async def test_user_cmd_missing(minio, monkeypatch, capsys):
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
-        result = await task.run_inference(s3_resources=s3_resources)
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
 
     assert result.return_code == 1
     assert result.exec_duration is None
