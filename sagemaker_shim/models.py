@@ -645,7 +645,7 @@ class UserProcess(ProcUserMixin):
         return env
 
     @property
-    def api_method(self) -> Any:
+    def api_method(self) -> APIMethod:
         api_method = APIMethod(
             os.environ.get(
                 "GRAND_CHALLENGE_COMPONENT_API_METHOD", "exec"
