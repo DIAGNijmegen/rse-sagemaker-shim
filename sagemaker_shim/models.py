@@ -721,13 +721,27 @@ class UserProcess(ProcUserMixin):
         elif self.api_method == APIMethod.INVOKE:
             logger.info("Tearing down user process")
 
-            await asyncio.shield(self._terminate_group_and_wait())
+            if hasattr(self, "process"):
+                await asyncio.shield(self._terminate_group_and_wait())
 
             try:
-                await asyncio.gather(self.stdout_task, self.stderr_task)
+                await asyncio.gather(self.stdout_task)
+            except AttributeError:
+                pass
             except Exception as error:
                 logger.warning(
-                    f"Error gathering stream tasks: {error}", exc_info=True
+                    f"Error gathering stdout stream task: {error}",
+                    exc_info=True,
+                )
+
+            try:
+                await asyncio.gather(self.stderr_task)
+            except AttributeError:
+                pass
+            except Exception as error:
+                logger.warning(
+                    f"Error gathering stderr stream task: {error}",
+                    exc_info=True,
                 )
 
             logger.info("User process teardown complete")
