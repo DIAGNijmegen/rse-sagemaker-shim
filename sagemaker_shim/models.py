@@ -535,18 +535,11 @@ class InferenceResult(BaseModel):
     sagemaker_shim_version: str = version("sagemaker-shim")
 
 
-def log_external(*, level: int, msg: str, task_pk: str) -> None:
-    """Send a message to the external logger"""
-    logger.log(
-        level=level, msg=msg, extra={"internal": False, "task_pk": task_pk}
-    )
-
-
 class UserProcess(ProcUserMixin):
     process: asyncio.subprocess.Process
     stdout_task: asyncio.Task[None]
     stderr_task: asyncio.Task[None]
-    current_task_pk: str
+    current_task: "InferenceTask | None" = None
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
@@ -666,8 +659,8 @@ class UserProcess(ProcUserMixin):
         else:
             raise NotImplementedError
 
-    async def run_inference(self, *, task_pk: str) -> int:
-        self.current_task_pk = task_pk
+    async def run_inference(self, *, task: "InferenceTask") -> int:
+        self.current_task = task
         if self.api_method == APIMethod.EXEC:
             return await self.execute()
         else:
@@ -785,7 +778,7 @@ class UserProcess(ProcUserMixin):
                 log_external(
                     level=logging.WARNING,
                     msg="WARNING: A log line was skipped as it was too long",
-                    task_pk=self.current_task_pk,
+                    task=self.current_task,
                 )
                 continue
 
@@ -795,7 +788,7 @@ class UserProcess(ProcUserMixin):
             log_external(
                 level=level,
                 msg=line.replace(b"\x00", b"").decode("utf-8"),
-                task_pk=self.current_task_pk,
+                task=self.current_task,
             )
 
     async def execute(self) -> int:
@@ -908,7 +901,7 @@ class InferenceTask(BaseModel):
                     log_external(
                         level=logging.ERROR,
                         msg=str(exception),
-                        task_pk=self.pk,
+                        task=self,
                     )
 
                 inference_result = InferenceResult(
@@ -941,14 +934,14 @@ class InferenceTask(BaseModel):
 
             try:
                 return_code = await asyncio.wait_for(
-                    user_process.run_inference(task_pk=self.pk),
+                    user_process.run_inference(task=self),
                     timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
                 log_external(
                     level=logging.ERROR,
                     msg="Time limit exceeded",
-                    task_pk=self.pk,
+                    task=self,
                 )
                 return_code = 1
 
@@ -1085,3 +1078,8 @@ class InferenceTask(BaseModel):
 
 class InferenceTaskList(RootModel[list[InferenceTask]]):
     pass
+
+
+def log_external(*, level: int, msg: str, task: InferenceTask | None) -> None:
+    """Send a message to the external logger"""
+    logger.log(level=level, msg=msg, extra={"internal": False, "task": task})
