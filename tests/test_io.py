@@ -17,6 +17,7 @@ from sagemaker_shim.models import (
     InferenceIO,
     InferenceResult,
     InferenceTask,
+    UserProcess,
     clean_path,
     get_s3_resources,
 )
@@ -354,6 +355,7 @@ async def test_inference_result_upload(
 ):
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
+    process = UserProcess()
     task = InferenceTask(
         pk=pk,
         inputs=[],
@@ -372,7 +374,9 @@ async def test_inference_result_upload(
     serialised_invocation = io.BytesIO()
 
     async with get_s3_resources() as s3_resources:
-        result = await task.run_inference(s3_resources=s3_resources)
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
 
         async with s3_resources.semaphore:
             await s3_resources.client.download_fileobj(
@@ -405,6 +409,7 @@ async def test_inference_result_signed(
     pk = str(uuid4())
     signing_key = secrets.token_hex()
     prefix = f"tasks/{pk}"
+    process = UserProcess()
     task = InferenceTask(
         pk=pk,
         inputs=[],
@@ -424,7 +429,9 @@ async def test_inference_result_signed(
     )
 
     async with get_s3_resources() as s3_resources:
-        result = await task.run_inference(s3_resources=s3_resources)
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
 
         async with s3_resources.semaphore:
             response = await s3_resources.client.get_object(
@@ -477,6 +484,7 @@ async def test_exec_duration_set(
     pk = str(uuid4())
     signing_key = secrets.token_hex()
     prefix = f"tasks/{pk}"
+    process = UserProcess()
     task = InferenceTask(
         pk=pk,
         inputs=[],
@@ -496,7 +504,9 @@ async def test_exec_duration_set(
     )
 
     async with get_s3_resources() as s3_resources:
-        result = await task.run_inference(s3_resources=s3_resources)
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
 
         async with s3_resources.semaphore:
             response = await s3_resources.client.get_object(

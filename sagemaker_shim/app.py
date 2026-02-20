@@ -28,16 +28,23 @@ from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceResult,
     InferenceTask,
+    UserProcess,
     get_s3_resources,
 )
 
 logger = logging.getLogger(__name__)
 
 
+USER_PROCESS: UserProcess | None = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with get_s3_resources() as s3_resources:
+        global USER_PROCESS
+
         auxiliary_data = AuxiliaryData(s3_resources=s3_resources)
+        USER_PROCESS = UserProcess()
 
         try:
             await auxiliary_data.setup()
@@ -47,9 +54,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             raise SystemExit(0) from error
 
         try:
+            await USER_PROCESS.setup()
+        except UserSafeError as error:
+            logger.error(msg=str(error), extra={"internal": False})
+            # If subprocess errors are handled our process should exit cleanly
+            raise SystemExit(0) from error
+
+        try:
             yield
         finally:
             await auxiliary_data.teardown()
+            await USER_PROCESS.teardown()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -78,5 +93,10 @@ async def invocations(task: InferenceTask) -> InferenceResult:
     logger.debug("invocations called")
     logger.debug(f"{task=}")
 
+    if USER_PROCESS is None:
+        raise RuntimeError("USER_PROCESS should be initialized")
+
     async with get_s3_resources() as s3_resources:
-        return await task.run_inference(s3_resources=s3_resources)
+        return await task.run_inference(
+            user_process=USER_PROCESS, s3_resources=s3_resources
+        )

@@ -18,6 +18,7 @@ from base64 import b64decode
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from enum import StrEnum
 from functools import cached_property
 from importlib.metadata import version
 from pathlib import Path
@@ -48,6 +49,11 @@ BUCKET_NAME_REGEX = re.compile(r"^[a-zA-Z0-9.\-_]{1,255}$")
 BUCKET_ARN_REGEX = re.compile(
     r"^arn:(aws).*:(s3|s3-object-lambda):[a-z\-0-9]*:[0-9]{12}:accesspoint[/:][a-zA-Z0-9\-.]{1,63}$|^arn:(aws).*:s3-outposts:[a-z\-0-9]+:[0-9]{12}:outpost[/:][a-zA-Z0-9\-]{1,63}[/:]accesspoint[/:][a-zA-Z0-9\-]{1,63}$"
 )
+
+
+class APIMethod(StrEnum):
+    INVOKE = "invoke"
+    EXEC = "exec"
 
 
 class UserInfo(NamedTuple):
@@ -529,30 +535,18 @@ class InferenceResult(BaseModel):
     sagemaker_shim_version: str = version("sagemaker-shim")
 
 
-class InferenceTask(ProcUserMixin, BaseModel):
-    model_config = ConfigDict(frozen=True)
+def log_external(*, level: int, msg: str, task_pk: str) -> None:
+    """Send a message to the external logger"""
+    logger.log(
+        level=level, msg=msg, extra={"internal": False, "task_pk": task_pk}
+    )
 
-    pk: str
-    inputs: list[InferenceIO]
-    output_bucket_name: str
-    output_prefix: str
-    timeout: timedelta
 
-    @field_validator("output_prefix")
-    @classmethod
-    def validate_prefix(cls, v: str) -> str:
-        if not v:
-            raise ValueError("Prefix cannot be blank")
-
-        if v[-1] != "/":
-            v += "/"
-
-        return v
-
-    @field_validator("output_bucket_name")
-    @classmethod
-    def validate_bucket_name(cls, v: str) -> str:
-        return validate_bucket_name(v)
+class UserProcess(ProcUserMixin):
+    process: asyncio.subprocess.Process
+    stdout_task: asyncio.Task[None]
+    stderr_task: asyncio.Task[None]
+    current_task_pk: str
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
@@ -581,37 +575,6 @@ class InferenceTask(ProcUserMixin, BaseModel):
         )
         logger.debug(f"{entrypoint=}")
         return entrypoint
-
-    @property
-    def input_path(self) -> Path:
-        """Local path where the subprocess is expected to read its input files"""
-        input_path = Path(
-            os.environ.get("GRAND_CHALLENGE_COMPONENT_INPUT_PATH", "/input")
-        )
-        logger.debug(f"{input_path=}")
-        return input_path
-
-    @property
-    def linked_input_path(self) -> Path:
-        """Local path where the input files will be placed and linked to"""
-        linked_input_parent = Path(
-            os.environ.get(
-                "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
-                "/opt/ml/input/data/",
-            )
-        )
-        linked_input_path = linked_input_parent / f"{self.pk}-input"
-        logger.debug(f"{linked_input_path=}")
-        return linked_input_path
-
-    @property
-    def output_path(self) -> Path:
-        """Local path where the subprocess is expected to write its files"""
-        output_path = Path(
-            os.environ.get("GRAND_CHALLENGE_COMPONENT_OUTPUT_PATH", "/output")
-        )
-        logger.debug(f"{output_path=}")
-        return output_path
 
     @property
     def extra_groups(self) -> list[int] | None:
@@ -681,8 +644,252 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
         return env
 
+    @property
+    def api_method(self) -> Any:
+        api_method = APIMethod(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_API_METHOD", "exec"
+            ).lower()
+        )
+        logger.debug(f"{api_method=}")
+        return api_method
+
+    async def setup(self) -> None:
+        if self.api_method == APIMethod.EXEC:
+            return
+        else:
+            raise NotImplementedError
+
+    async def teardown(self) -> None:
+        if self.api_method == APIMethod.EXEC:
+            return
+        else:
+            raise NotImplementedError
+
+    async def run_inference(self, *, task_pk: str) -> int:
+        self.current_task_pk = task_pk
+        if self.api_method == APIMethod.EXEC:
+            return await self.execute()
+        else:
+            raise NotImplementedError
+
+    async def _start_user_process_and_stream_tasks(self) -> None:
+        logger.info(f"Calling {self.proc_args=}")
+
+        try:
+            self.process = await asyncio.create_subprocess_exec(
+                *self.proc_args,
+                user=self.proc_user.uid,
+                group=self.proc_user.gid,
+                extra_groups=self.extra_groups,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=self.proc_env,
+                # A new process group must be used for cancellation
+                start_new_session=True,
+                # The following should always be set to protect this environment
+                shell=False,
+                close_fds=True,
+            )
+        except PermissionError as error:
+            raise UserSafeError(
+                "The user defined in the containers USER instruction "
+                "does not have permission to execute the command "
+                "defined by the containers ENTRYPOINT and CMD instructions"
+            ) from error
+        except FileNotFoundError as error:
+            raise UserSafeError(
+                "The command defined by the containers ENTRYPOINT and "
+                "CMD instructions does not exist"
+            ) from error
+
+        self.stdout_task = asyncio.create_task(
+            self._stream_to_external(
+                stream=self.process.stdout, level=STDOUT_LEVEL
+            )
+        )
+        self.stderr_task = asyncio.create_task(
+            self._stream_to_external(
+                stream=self.process.stderr, level=STDOUT_LEVEL + 10
+            )
+        )
+
+    @staticmethod
+    async def _cancel_tasks(*, tasks: Iterable[asyncio.Task[None]]) -> None:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _terminate_group_and_wait(self) -> None:  # noqa:C901
+        if self.process.returncode is not None:
+            return
+
+        try:
+            os.killpg(self.process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception:
+            try:
+                self.process.terminate()
+            except Exception as error:
+                logger.info(error, exc_info=True)
+
+        try:
+            # Wait for graceful termination
+            await asyncio.wait_for(
+                self.process.wait(),
+                timeout=int(
+                    os.environ.get(
+                        "GRAND_CHALLENGE_COMPONENT_SIGTERM_GRACE_SECONDS", "5"
+                    )
+                ),
+            )
+            logger.info("Process group terminated")
+            return
+        except TimeoutError:
+            logger.warning(
+                "Process group did not exit within grace period; "
+                "escalating to SIGKILL"
+            )
+        except Exception as error:
+            logger.info(error, exc_info=True)
+
+        try:
+            os.killpg(self.process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        except Exception:
+            try:
+                self.process.kill()
+            except Exception as error:
+                logger.info(error, exc_info=True)
+
+        try:
+            await self.process.wait()
+            logger.info("Process group killed")
+        except Exception as error:
+            logger.warning(error, exc_info=True)
+
+    async def _stream_to_external(
+        self, *, stream: asyncio.StreamReader | None, level: int
+    ) -> None:
+        """Send the contents of an io stream to the external logs"""
+        if stream is None:
+            return
+
+        while True:
+            try:
+                line = await stream.readline()
+            except ValueError:
+                log_external(
+                    level=logging.WARNING,
+                    msg="WARNING: A log line was skipped as it was too long",
+                    task_pk=self.current_task_pk,
+                )
+                continue
+
+            if not line:
+                break
+
+            log_external(
+                level=level,
+                msg=line.replace(b"\x00", b"").decode("utf-8"),
+                task_pk=self.current_task_pk,
+            )
+
+    async def execute(self) -> int:
+        """
+        Run the original entrypoint and command in a subprocess
+
+        This needs to be as lean as possible as the method is timed
+        """
+        await self._start_user_process_and_stream_tasks()
+
+        try:
+            await asyncio.gather(self.stdout_task, self.stderr_task)
+            return await self.process.wait()
+
+        except asyncio.CancelledError:
+            logger.info("Execution was cancelled")
+            # shield so termination completes even if cancellation continues
+            await asyncio.shield(self._terminate_group_and_wait())
+            await self._cancel_tasks(
+                tasks=(self.stdout_task, self.stderr_task)
+            )
+            raise
+
+        except Exception as error:
+            logger.error(error, exc_info=True)
+            await asyncio.shield(self._terminate_group_and_wait())
+            await self._cancel_tasks(
+                tasks=(self.stdout_task, self.stderr_task)
+            )
+            raise
+
+        finally:
+            # best-effort final cleanup; shielded to avoid being interrupted
+            await asyncio.shield(self._terminate_group_and_wait())
+
+
+class InferenceTask(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    pk: str
+    inputs: list[InferenceIO]
+    output_bucket_name: str
+    output_prefix: str
+    timeout: timedelta
+
+    @field_validator("output_prefix")
+    @classmethod
+    def validate_prefix(cls, v: str) -> str:
+        if not v:
+            raise ValueError("Prefix cannot be blank")
+
+        if v[-1] != "/":
+            v += "/"
+
+        return v
+
+    @field_validator("output_bucket_name")
+    @classmethod
+    def validate_bucket_name(cls, v: str) -> str:
+        return validate_bucket_name(v)
+
+    @property
+    def input_path(self) -> Path:
+        """Local path where the subprocess is expected to read its input files"""
+        input_path = Path(
+            os.environ.get("GRAND_CHALLENGE_COMPONENT_INPUT_PATH", "/input")
+        )
+        logger.debug(f"{input_path=}")
+        return input_path
+
+    @property
+    def linked_input_path(self) -> Path:
+        """Local path where the input files will be placed and linked to"""
+        linked_input_parent = Path(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
+                "/opt/ml/input/data/",
+            )
+        )
+        linked_input_path = linked_input_parent / f"{self.pk}-input"
+        logger.debug(f"{linked_input_path=}")
+        return linked_input_path
+
+    @property
+    def output_path(self) -> Path:
+        """Local path where the subprocess is expected to write its files"""
+        output_path = Path(
+            os.environ.get("GRAND_CHALLENGE_COMPONENT_OUTPUT_PATH", "/output")
+        )
+        logger.debug(f"{output_path=}")
+        return output_path
+
     async def run_inference(
-        self, *, s3_resources: S3Resources
+        self, *, user_process: UserProcess, s3_resources: S3Resources
     ) -> InferenceResult:
         """Run the inference on a single case"""
         logger.info(f"Awaiting lock for {self.pk=}")
@@ -694,11 +901,15 @@ class InferenceTask(ProcUserMixin, BaseModel):
 
             try:
                 inference_result = await self._run_inference(
-                    s3_resources=s3_resources
+                    user_process=user_process, s3_resources=s3_resources
                 )
             except* UserSafeError as exception_group:
                 for exception in exception_group.exceptions:
-                    self.log_external(level=logging.ERROR, msg=str(exception))
+                    log_external(
+                        level=logging.ERROR,
+                        msg=str(exception),
+                        task_pk=self.pk,
+                    )
 
                 inference_result = InferenceResult(
                     pk=self.pk,
@@ -719,24 +930,25 @@ class InferenceTask(ProcUserMixin, BaseModel):
         return inference_result
 
     async def _run_inference(  # noqa:C901
-        self, *, s3_resources: S3Resources
+        self, *, user_process: UserProcess, s3_resources: S3Resources
     ) -> InferenceResult:
         try:
             self.reset_io()
 
             await self.download_input(s3_resources=s3_resources)
 
-            logger.info(f"Calling {self.proc_args=}")
-
             exec_start = time.monotonic()
 
             try:
                 return_code = await asyncio.wait_for(
-                    self.execute(), timeout=self.timeout.total_seconds()
+                    user_process.run_inference(task_pk=self.pk),
+                    timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
-                self.log_external(
-                    level=logging.ERROR, msg="Time limit exceeded"
+                log_external(
+                    level=logging.ERROR,
+                    msg="Time limit exceeded",
+                    task_pk=self.pk,
                 )
                 return_code = 1
 
@@ -869,166 +1081,6 @@ class InferenceTask(ProcUserMixin, BaseModel):
                     "Metadata": {"signature_hmac_sha256": signature},
                 },
             )
-
-    async def execute(self) -> int:
-        """
-        Run the original entrypoint and command in a subprocess
-
-        This needs to be as lean as possible as the method is timed
-        """
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *self.proc_args,
-                user=self.proc_user.uid,
-                group=self.proc_user.gid,
-                extra_groups=self.extra_groups,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=self.proc_env,
-                # A new process group must be used for cancellation
-                start_new_session=True,
-                # The following should always be set to protect this environment
-                shell=False,
-                close_fds=True,
-            )
-        except PermissionError as error:
-            raise UserSafeError(
-                "The user defined in the containers USER instruction "
-                "does not have permission to execute the command "
-                "defined by the containers ENTRYPOINT and CMD instructions"
-            ) from error
-        except FileNotFoundError as error:
-            raise UserSafeError(
-                "The command defined by the containers ENTRYPOINT and "
-                "CMD instructions does not exist"
-            ) from error
-
-        stdout_task = asyncio.create_task(
-            self._stream_to_external(stream=process.stdout, level=STDOUT_LEVEL)
-        )
-        stderr_task = asyncio.create_task(
-            self._stream_to_external(
-                stream=process.stderr, level=STDOUT_LEVEL + 10
-            )
-        )
-
-        try:
-            await asyncio.gather(stdout_task, stderr_task)
-            return await process.wait()
-
-        except asyncio.CancelledError:
-            logger.info("Execution was cancelled")
-            # shield so termination completes even if cancellation continues
-            await asyncio.shield(
-                self._terminate_group_and_wait(process=process)
-            )
-            await self._cancel_tasks(tasks=(stdout_task, stderr_task))
-            raise
-
-        except Exception as error:
-            logger.error(error, exc_info=True)
-            await asyncio.shield(
-                self._terminate_group_and_wait(process=process)
-            )
-            await self._cancel_tasks(tasks=(stdout_task, stderr_task))
-            raise
-
-        finally:
-            # best-effort final cleanup; shielded to avoid being interrupted
-            await asyncio.shield(
-                self._terminate_group_and_wait(process=process)
-            )
-
-    @staticmethod
-    async def _cancel_tasks(*, tasks: Iterable[asyncio.Task[None]]) -> None:
-        for t in tasks:
-            if not t.done():
-                t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-    @staticmethod
-    async def _terminate_group_and_wait(  # noqa:C901
-        *, process: asyncio.subprocess.Process
-    ) -> None:
-        if process.returncode is not None:
-            return
-
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            return
-        except Exception:
-            try:
-                process.terminate()
-            except Exception as error:
-                logger.info(error, exc_info=True)
-
-        try:
-            # Wait for graceful termination
-            await asyncio.wait_for(
-                process.wait(),
-                timeout=int(
-                    os.environ.get(
-                        "GRAND_CHALLENGE_COMPONENT_SIGTERM_GRACE_SECONDS", "5"
-                    )
-                ),
-            )
-            logger.info("Process group terminated")
-            return
-        except TimeoutError:
-            logger.warning(
-                "Process group did not exit within grace period; "
-                "escalating to SIGKILL"
-            )
-        except Exception as error:
-            logger.info(error, exc_info=True)
-
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            return
-        except Exception:
-            try:
-                process.kill()
-            except Exception as error:
-                logger.info(error, exc_info=True)
-
-        try:
-            await process.wait()
-            logger.info("Process group killed")
-        except Exception as error:
-            logger.warning(error, exc_info=True)
-
-    async def _stream_to_external(
-        self, *, stream: asyncio.StreamReader | None, level: int
-    ) -> None:
-        """Send the contents of an io stream to the external logs"""
-        if stream is None:
-            return
-
-        while True:
-            try:
-                line = await stream.readline()
-            except ValueError:
-                self.log_external(
-                    level=logging.WARNING,
-                    msg="WARNING: A log line was skipped as it was too long",
-                )
-                continue
-
-            if not line:
-                break
-
-            self.log_external(
-                level=level,
-                msg=line.replace(b"\x00", b"").decode("utf-8"),
-            )
-
-    def log_external(self, *, level: int, msg: str) -> None:
-        """Send a message to the external logger"""
-        logger.log(
-            level=level, msg=msg, extra={"internal": False, "task": self}
-        )
 
 
 class InferenceTaskList(RootModel[list[InferenceTask]]):

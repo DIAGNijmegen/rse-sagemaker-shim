@@ -20,6 +20,7 @@ from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceTaskList,
     S3Resources,
+    UserProcess,
     get_s3_file_content,
     get_s3_resources,
 )
@@ -88,6 +89,7 @@ async def invoke(tasks: str, file: str) -> None:
         )
 
         auxiliary_data = AuxiliaryData(s3_resources=s3_resources)
+        user_process = UserProcess()
 
         try:
             try:
@@ -97,9 +99,18 @@ async def invoke(tasks: str, file: str) -> None:
                 # If subprocess errors are handled our process should exit cleanly
                 raise SystemExit(0) from error
 
+            try:
+                await user_process.setup()
+            except UserSafeError as error:
+                logger.error(msg=str(error), extra={"internal": False})
+                # If subprocess errors are handled our process should exit cleanly
+                raise SystemExit(0) from error
+
             for task in parsed_tasks.root:
                 # Only run one task at a time
-                result = await task.run_inference(s3_resources=s3_resources)
+                result = await task.run_inference(
+                    user_process=user_process, s3_resources=s3_resources
+                )
 
                 # Fail fast
                 if result.return_code != 0:
@@ -112,6 +123,7 @@ async def invoke(tasks: str, file: str) -> None:
             logger.info("Model invocation complete")
         finally:
             await auxiliary_data.teardown()
+            await user_process.teardown()
 
 
 async def _parse_tasks(

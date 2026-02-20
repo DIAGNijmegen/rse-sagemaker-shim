@@ -1,13 +1,12 @@
 import logging.config
 from asyncio.streams import _DEFAULT_LIMIT
 from copy import deepcopy
-from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 
 from sagemaker_shim.logging import LOGGING_CONFIG
-from sagemaker_shim.models import InferenceTask
+from sagemaker_shim.models import UserProcess
 from tests.utils import encode_b64j
 
 
@@ -93,7 +92,7 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
 
     response = client.post("/invocations", json=data)
 
-    # The logs need to be interprable by grand challenge
+    # The logs need to be interpretable by grand challenge
     captured = capsys.readouterr()
     assert (
         '{"log": "hellostdout", "level": "INFO", "source": "stdout", '
@@ -173,15 +172,9 @@ def test_proc_args(cmd, entrypoint, expected, monkeypatch):
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
         encode_b64j(val=cmd),
     )
-    j = InferenceTask(
-        pk=str(uuid4()),
-        inputs=[],
-        output_bucket_name="test",
-        output_prefix="test",
-        timeout=timedelta(),
-    )
+    p = UserProcess()
 
-    assert j.proc_args == expected
+    assert p.proc_args == expected
 
 
 @pytest.mark.parametrize(
@@ -200,16 +193,10 @@ def test_unset_cmd_and_entrypoint(envvars, monkeypatch):
     for var in envvars:
         monkeypatch.setenv(var, encode_b64j(val=None))
 
-    j = InferenceTask(
-        pk=str(uuid4()),
-        inputs=[],
-        output_bucket_name="test",
-        output_prefix="test",
-        timeout=timedelta(),
-    )
+    p = UserProcess()
 
     with pytest.raises(ValueError) as e:
-        j.proc_args
+        p.proc_args
 
     assert "Either cmd or entrypoint must be set" in str(e)
 
@@ -227,8 +214,8 @@ def test_unset_cmd_and_entrypoint(envvars, monkeypatch):
 )
 def test_decode_b64j(val):
     encoded = encode_b64j(val=val)
-    assert InferenceTask.decode_b64j(encoded=encoded) == val
+    assert UserProcess.decode_b64j(encoded=encoded) == val
 
 
 def test_decode_returns_none():
-    assert InferenceTask.decode_b64j(encoded=None) is None
+    assert UserProcess.decode_b64j(encoded=None) is None
