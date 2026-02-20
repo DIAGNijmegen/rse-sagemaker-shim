@@ -931,7 +931,7 @@ class InferenceTask(BaseModel):
 
             await self.download_input(s3_resources=s3_resources)
 
-            exec_start = time.monotonic()
+            start = time.monotonic()
 
             try:
                 return_code = await asyncio.wait_for(
@@ -946,7 +946,7 @@ class InferenceTask(BaseModel):
                 )
                 return_code = 1
 
-            exec_duration = time.monotonic() - exec_start
+            duration = time.monotonic() - start
 
             logger.info(f"{return_code=}")
 
@@ -959,8 +959,16 @@ class InferenceTask(BaseModel):
                 pk=self.pk,
                 return_code=return_code,
                 outputs=outputs,
-                exec_duration=timedelta(seconds=exec_duration),
-                invoke_duration=None,
+                exec_duration=(
+                    timedelta(seconds=duration)
+                    if user_process.api_method == APIMethod.EXEC
+                    else None
+                ),
+                invoke_duration=(
+                    timedelta(seconds=duration)
+                    if user_process.api_method == APIMethod.INVOKE
+                    else None
+                ),
             )
         finally:
             self.reset_io()
