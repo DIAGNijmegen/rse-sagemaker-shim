@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
 import aioboto3
+import httpx
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
@@ -639,6 +640,40 @@ class UserProcess(ProcUserMixin):
         return env
 
     @property
+    def start_and_health_timeout(self) -> timedelta:
+        seconds = int(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_START_AND_HEALTH_TIMEOUT_SECONDS",
+                "300",
+            )
+        )
+        health_check_timeout = timedelta(seconds=seconds)
+        logger.debug(f"{health_check_timeout=}")
+        return health_check_timeout
+
+    @property
+    def health_check_call_timeout(self) -> timedelta:
+        seconds = int(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_HEALTH_CHECK_CALL_TIMEOUT_SECONDS",
+                "10",
+            )
+        )
+        health_check_call_timeout = timedelta(seconds=seconds)
+        logger.debug(f"{health_check_call_timeout=}")
+        return health_check_call_timeout
+
+    @property
+    def port(self) -> int:
+        user_webserver_port = int(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_USER_WEBSERVER_PORT", "4743"
+            )
+        )
+        logger.debug(f"{user_webserver_port=}")
+        return user_webserver_port
+
+    @property
     def api_method(self) -> APIMethod:
         api_method = APIMethod(
             os.environ.get(
@@ -651,12 +686,51 @@ class UserProcess(ProcUserMixin):
     async def setup(self) -> None:
         if self.api_method == APIMethod.EXEC:
             return
+        elif self.api_method == APIMethod.INVOKE:
+            logger.info("Setting up user process for invoke mode")
+
+            try:
+                await asyncio.wait_for(
+                    self.start_process_and_wait_for_health(),
+                    timeout=self.start_and_health_timeout.total_seconds(),
+                )
+            except TimeoutError as error:
+                await self.teardown()
+                raise UserSafeError(
+                    "Health check time limit exceeded"
+                ) from error
+            except UserSafeError:
+                await self.teardown()
+                raise
+            except Exception as error:
+                logger.error(
+                    f"Unexpected error during setup: {error}", exc_info=True
+                )
+                await self.teardown()
+                raise UserSafeError(
+                    f"Failed to start user process: {error}"
+                ) from error
+
+            logger.info("User process is healthy")
         else:
             raise NotImplementedError
 
     async def teardown(self) -> None:
         if self.api_method == APIMethod.EXEC:
             return
+        elif self.api_method == APIMethod.INVOKE:
+            logger.info("Tearing down user process")
+
+            await asyncio.shield(self._terminate_group_and_wait())
+
+            try:
+                await asyncio.gather(self.stdout_task, self.stderr_task)
+            except Exception as error:
+                logger.warning(
+                    f"Error gathering stream tasks: {error}", exc_info=True
+                )
+
+            logger.info("User process teardown complete")
         else:
             raise NotImplementedError
 
@@ -664,6 +738,8 @@ class UserProcess(ProcUserMixin):
         self.current_task = task
         if self.api_method == APIMethod.EXEC:
             return await self.execute()
+        elif self.api_method == APIMethod.INVOKE:
+            return await self.invoke(task=task)
         else:
             raise NotImplementedError
 
@@ -707,6 +783,54 @@ class UserProcess(ProcUserMixin):
                 stream=self.process.stderr, level=STDOUT_LEVEL + 10
             )
         )
+
+    async def health_check(self) -> None:
+        """Wait for the health endpoint to return 200"""
+        async with httpx.AsyncClient() as client:
+            while True:
+                logger.info("Calling health endpoint")
+                try:
+                    response = await client.get(
+                        f"http://127.0.0.1:{self.port}/health",
+                        timeout=self.health_check_call_timeout.total_seconds(),
+                    )
+                except httpx.TimeoutException:
+                    continue
+                except httpx.ConnectError:
+                    await asyncio.sleep(
+                        self.health_check_call_timeout.total_seconds()
+                    )
+                    continue
+
+                logger.info(
+                    f"Health endpoint returned status code {response.status_code}"
+                )
+
+                if response.status_code == 200:
+                    break
+                elif response.is_redirect:
+                    raise UserSafeError(
+                        "Health endpoint returned redirect response"
+                    )
+                elif response.is_error:
+                    raise UserSafeError(
+                        "Health endpoint returned error response"
+                    )
+                else:
+                    await asyncio.sleep(
+                        self.health_check_call_timeout.total_seconds()
+                    )
+
+    async def start_process_and_wait_for_health(self) -> None:
+        try:
+            await self._start_user_process_and_stream_tasks()
+        except UserSafeError as error:
+            raise UserSafeError(f"Could not start server: {error}") from error
+
+        try:
+            await self.health_check()
+        except UserSafeError as error:
+            raise UserSafeError(f"Health check failed: {error}") from error
 
     @staticmethod
     async def _cancel_tasks(*, tasks: Iterable[asyncio.Task[None]]) -> None:
@@ -824,6 +948,35 @@ class UserProcess(ProcUserMixin):
         finally:
             # best-effort final cleanup; shielded to avoid being interrupted
             await asyncio.shield(self._terminate_group_and_wait())
+
+    async def invoke(self, *, task: "InferenceTask") -> int:
+        """Wait for the invoke endpoint to return 201"""
+        logger.info(f"Calling invoke endpoint for task {task.pk}")
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"http://127.0.0.1:{self.port}/invoke",
+                    timeout=task.timeout.total_seconds(),
+                )
+            except httpx.TimeoutException as error:
+                raise UserSafeError("Invoke time limit exceeded") from error
+            except httpx.ConnectError as error:
+                raise UserSafeError(
+                    "Could not connect to invoke endpoint"
+                ) from error
+            except httpx.HTTPError as error:
+                raise UserSafeError(
+                    f"HTTP error calling invoke endpoint: {error}"
+                ) from error
+
+            if response.status_code == 201:
+                return 0
+            else:
+                raise UserSafeError(
+                    f"Invoke endpoint returned status {response.status_code}, "
+                    f"expected 201"
+                )
 
 
 class InferenceTask(BaseModel):
