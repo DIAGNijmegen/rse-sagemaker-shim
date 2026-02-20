@@ -536,10 +536,11 @@ class InferenceResult(BaseModel):
 
 
 class UserProcess(ProcUserMixin):
-    process: asyncio.subprocess.Process
-    stdout_task: asyncio.Task[None]
-    stderr_task: asyncio.Task[None]
-    current_task: "InferenceTask | None" = None
+    def __init__(self) -> None:
+        self.process: asyncio.subprocess.Process
+        self.stdout_task: asyncio.Task[None]
+        self.stderr_task: asyncio.Task[None]
+        self.current_task: "InferenceTask | None" = None
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
