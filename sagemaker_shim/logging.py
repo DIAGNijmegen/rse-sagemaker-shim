@@ -28,8 +28,7 @@ class JSONFormatter(logging.Formatter):
             source = "stderr"
 
         internal = getattr(record, "internal", True)
-        task = getattr(record, "task", None)
-        task_pk = getattr(task, "pk", None)
+        task_pk = getattr(record, "task_pk", None)
 
         return "\n".join(
             json.dumps(

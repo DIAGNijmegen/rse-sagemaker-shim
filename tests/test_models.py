@@ -1064,16 +1064,8 @@ async def test_invoke_returns_0_on_201(minio, mocker, monkeypatch):
         return_value=httpx.Response(201),
     )
     process = UserProcess()
-    pk = str(uuid4())
-    task = InferenceTask(
-        pk=pk,
-        inputs=[],
-        output_bucket_name=minio.output_bucket_name,
-        output_prefix=f"tasks/{pk}",
-        timeout=timedelta(seconds=1),
-    )
 
-    return_code = await process.invoke(task=task)
+    return_code = await process.invoke(timeout=timedelta(seconds=1))
 
     assert return_code == 0
 
@@ -1144,17 +1136,9 @@ async def test_invoke_raises_on_non_201(
         **client_kwargs,
     )
     process = UserProcess()
-    pk = str(uuid4())
-    task = InferenceTask(
-        pk=pk,
-        inputs=[],
-        output_bucket_name=minio.output_bucket_name,
-        output_prefix=f"tasks/{pk}",
-        timeout=timedelta(seconds=1),
-    )
 
     with expectation:
-        await process.invoke(task=task)
+        await process.invoke(timeout=timedelta(seconds=1))
 
 
 @pytest.mark.asyncio

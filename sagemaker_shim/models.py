@@ -536,12 +536,19 @@ class InferenceResult(BaseModel):
     sagemaker_shim_version: str = version("sagemaker-shim")
 
 
+def log_external(*, level: int, msg: str, task_pk: str | None) -> None:
+    """Send a message to the external logger"""
+    logger.log(
+        level=level, msg=msg, extra={"internal": False, "task_pk": task_pk}
+    )
+
+
 class UserProcess(ProcUserMixin):
     def __init__(self) -> None:
         self.process: asyncio.subprocess.Process
         self.stdout_task: asyncio.Task[None]
         self.stderr_task: asyncio.Task[None]
-        self.current_task: "InferenceTask | None" = None
+        self.current_task_pk: str | None = None
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
@@ -749,11 +756,12 @@ class UserProcess(ProcUserMixin):
             raise NotImplementedError
 
     async def run_inference(self, *, task: "InferenceTask") -> int:
-        self.current_task = task
+        self.current_task_pk = task.pk
         if self.api_method == APIMethod.EXEC:
             return await self.execute()
         elif self.api_method == APIMethod.INVOKE:
-            return await self.invoke(task=task)
+            logger.info(f"Calling invoke endpoint for task {task.pk}")
+            return await self.invoke(timeout=task.timeout)
         else:
             raise NotImplementedError
 
@@ -917,7 +925,7 @@ class UserProcess(ProcUserMixin):
                 log_external(
                     level=logging.WARNING,
                     msg="WARNING: A log line was skipped as it was too long",
-                    task=self.current_task,
+                    task_pk=self.current_task_pk,
                 )
                 continue
 
@@ -927,7 +935,7 @@ class UserProcess(ProcUserMixin):
             log_external(
                 level=level,
                 msg=line.replace(b"\x00", b"").decode("utf-8"),
-                task=self.current_task,
+                task_pk=self.current_task_pk,
             )
 
     async def execute(self) -> int:
@@ -963,15 +971,13 @@ class UserProcess(ProcUserMixin):
             # best-effort final cleanup; shielded to avoid being interrupted
             await asyncio.shield(self._terminate_group_and_wait())
 
-    async def invoke(self, *, task: "InferenceTask") -> int:
+    async def invoke(self, *, timeout: timedelta) -> int:
         """Wait for the invoke endpoint to return 201"""
-        logger.info(f"Calling invoke endpoint for task {task.pk}")
-
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
                     f"http://127.0.0.1:{self.port}/invoke",
-                    timeout=task.timeout.total_seconds(),
+                    timeout=timeout.total_seconds(),
                 )
             except httpx.TimeoutException as error:
                 raise UserSafeError("Invoke time limit exceeded") from error
@@ -1069,7 +1075,7 @@ class InferenceTask(BaseModel):
                     log_external(
                         level=logging.ERROR,
                         msg=str(exception),
-                        task=self,
+                        task_pk=self.pk,
                     )
 
                 inference_result = InferenceResult(
@@ -1109,7 +1115,7 @@ class InferenceTask(BaseModel):
                 log_external(
                     level=logging.ERROR,
                     msg="Time limit exceeded",
-                    task=self,
+                    task_pk=self.pk,
                 )
                 return_code = 1
 
@@ -1254,8 +1260,3 @@ class InferenceTask(BaseModel):
 
 class InferenceTaskList(RootModel[list[InferenceTask]]):
     pass
-
-
-def log_external(*, level: int, msg: str, task: InferenceTask | None) -> None:
-    """Send a message to the external logger"""
-    logger.log(level=level, msg=msg, extra={"internal": False, "task": task})
