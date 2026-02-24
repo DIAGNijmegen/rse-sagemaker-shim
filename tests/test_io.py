@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
 
+import httpx
 import pytest
 
 from sagemaker_shim.logging import LOGGING_CONFIG
@@ -205,6 +206,7 @@ async def test_invoke_with_dodgy_file(
     response = response.json()
     assert response["return_code"] == 1
     assert response["exec_duration"] is None
+    assert response["invoke_duration"] is None
 
     captured = capsys.readouterr()
     assert captured.err == (
@@ -527,3 +529,61 @@ async def test_exec_duration_set(
     assert data["exec_duration"].startswith(f"PT{duration_string}")
     assert data["exec_duration"].endswith("S")
     assert data["invoke_duration"] is None
+
+
+@pytest.mark.asyncio
+async def test_invoke_duration_set(minio, tmp_path, mocker, monkeypatch):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.post",
+        return_value=httpx.Response(201),
+    )
+    pk = str(uuid4())
+    signing_key = secrets.token_hex()
+    prefix = f"tasks/{pk}"
+    process = UserProcess()
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=str(prefix),
+        timeout=timedelta(seconds=10),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", signing_key
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "invoke",
+    )
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
+
+        async with s3_resources.semaphore:
+            response = await s3_resources.client.get_object(
+                Bucket=minio.output_bucket_name,
+                Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
+            )
+
+    assert result.return_code == 0
+    assert result.pk == pk
+
+    data = json.loads(await response["Body"].read())
+    duration = result.invoke_duration
+    duration_string = str(result.invoke_duration.total_seconds())
+
+    assert duration > timedelta(milliseconds=1)
+    assert duration < timedelta(seconds=10)
+    # Value should be an ISO 8601 duration
+    assert data["invoke_duration"].startswith(f"PT{duration_string}")
+    assert data["invoke_duration"].endswith("S")
+    assert data["exec_duration"] is None
