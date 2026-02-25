@@ -545,10 +545,10 @@ def log_external(*, level: int, msg: str, task_pk: str | None) -> None:
 
 class UserProcess(ProcUserMixin):
     def __init__(self) -> None:
-        self.process: asyncio.subprocess.Process
-        self.stdout_task: asyncio.Task[None]
-        self.stderr_task: asyncio.Task[None]
-        self.current_task_pk: str | None = None
+        self._process: asyncio.subprocess.Process
+        self._stdout_task: asyncio.Task[None]
+        self._stderr_task: asyncio.Task[None]
+        self._current_task_pk: str | None = None
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
@@ -732,7 +732,7 @@ class UserProcess(ProcUserMixin):
                 await asyncio.shield(self._terminate_group_and_wait())
 
             try:
-                await asyncio.gather(self.stdout_task)
+                await asyncio.gather(self._stdout_task)
             except AttributeError:
                 pass
             except Exception as error:
@@ -742,7 +742,7 @@ class UserProcess(ProcUserMixin):
                 )
 
             try:
-                await asyncio.gather(self.stderr_task)
+                await asyncio.gather(self._stderr_task)
             except AttributeError:
                 pass
             except Exception as error:
@@ -756,7 +756,7 @@ class UserProcess(ProcUserMixin):
             raise NotImplementedError
 
     async def run_inference(self, *, task: "InferenceTask") -> int:
-        self.current_task_pk = task.pk
+        self._current_task_pk = task.pk
         if self.api_method == APIMethod.EXEC:
             return await self.execute()
         elif self.api_method == APIMethod.INVOKE:
@@ -769,7 +769,7 @@ class UserProcess(ProcUserMixin):
         logger.info(f"Calling {self.proc_args=}")
 
         try:
-            self.process = await asyncio.create_subprocess_exec(
+            self._process = await asyncio.create_subprocess_exec(
                 *self.proc_args,
                 user=self.proc_user.uid,
                 group=self.proc_user.gid,
@@ -795,14 +795,14 @@ class UserProcess(ProcUserMixin):
                 "CMD instructions does not exist"
             ) from error
 
-        self.stdout_task = asyncio.create_task(
+        self._stdout_task = asyncio.create_task(
             self._stream_to_external(
-                stream=self.process.stdout, level=STDOUT_LEVEL
+                stream=self._process.stdout, level=STDOUT_LEVEL
             )
         )
-        self.stderr_task = asyncio.create_task(
+        self._stderr_task = asyncio.create_task(
             self._stream_to_external(
-                stream=self.process.stderr, level=STDOUT_LEVEL + 10
+                stream=self._process.stderr, level=STDOUT_LEVEL + 10
             )
         )
 
@@ -862,23 +862,23 @@ class UserProcess(ProcUserMixin):
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _terminate_group_and_wait(self) -> None:  # noqa:C901
-        if self.process.returncode is not None:
+        if self._process.returncode is not None:
             return
 
         try:
-            os.killpg(self.process.pid, signal.SIGTERM)
+            os.killpg(self._process.pid, signal.SIGTERM)
         except ProcessLookupError:
             return
         except Exception:
             try:
-                self.process.terminate()
+                self._process.terminate()
             except Exception as error:
                 logger.info(error, exc_info=True)
 
         try:
             # Wait for graceful termination
             await asyncio.wait_for(
-                self.process.wait(),
+                self._process.wait(),
                 timeout=int(
                     os.environ.get(
                         "GRAND_CHALLENGE_COMPONENT_SIGTERM_GRACE_SECONDS", "5"
@@ -896,17 +896,17 @@ class UserProcess(ProcUserMixin):
             logger.info(error, exc_info=True)
 
         try:
-            os.killpg(self.process.pid, signal.SIGKILL)
+            os.killpg(self._process.pid, signal.SIGKILL)
         except ProcessLookupError:
             return
         except Exception:
             try:
-                self.process.kill()
+                self._process.kill()
             except Exception as error:
                 logger.info(error, exc_info=True)
 
         try:
-            await self.process.wait()
+            await self._process.wait()
             logger.info("Process group killed")
         except Exception as error:
             logger.warning(error, exc_info=True)
@@ -925,7 +925,7 @@ class UserProcess(ProcUserMixin):
                 log_external(
                     level=logging.WARNING,
                     msg="WARNING: A log line was skipped as it was too long",
-                    task_pk=self.current_task_pk,
+                    task_pk=self._current_task_pk,
                 )
                 continue
 
@@ -935,7 +935,7 @@ class UserProcess(ProcUserMixin):
             log_external(
                 level=level,
                 msg=line.replace(b"\x00", b"").decode("utf-8"),
-                task_pk=self.current_task_pk,
+                task_pk=self._current_task_pk,
             )
 
     async def execute(self) -> int:
@@ -947,15 +947,15 @@ class UserProcess(ProcUserMixin):
         await self._start_user_process_and_stream_tasks()
 
         try:
-            await asyncio.gather(self.stdout_task, self.stderr_task)
-            return await self.process.wait()
+            await asyncio.gather(self._stdout_task, self._stderr_task)
+            return await self._process.wait()
 
         except asyncio.CancelledError:
             logger.info("Execution was cancelled")
             # shield so termination completes even if cancellation continues
             await asyncio.shield(self._terminate_group_and_wait())
             await self._cancel_tasks(
-                tasks=(self.stdout_task, self.stderr_task)
+                tasks=(self._stdout_task, self._stderr_task)
             )
             raise
 
@@ -963,7 +963,7 @@ class UserProcess(ProcUserMixin):
             logger.error(error, exc_info=True)
             await asyncio.shield(self._terminate_group_and_wait())
             await self._cancel_tasks(
-                tasks=(self.stdout_task, self.stderr_task)
+                tasks=(self._stdout_task, self._stderr_task)
             )
             raise
 

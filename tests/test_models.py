@@ -999,7 +999,7 @@ async def test_exec_setup_and_teardown(monkeypatch):
     await p.setup()
 
     with pytest.raises(AttributeError):
-        p.process
+        p._process
 
     with nullcontext():
         await p.teardown()
