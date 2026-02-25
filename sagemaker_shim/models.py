@@ -808,8 +808,18 @@ class UserProcess(ProcUserMixin):
 
     async def health_check(self) -> None:
         """Wait for the health endpoint to return 200"""
+        try:
+            max_retries = max(
+                1,
+                int(
+                    self.start_and_health_timeout.total_seconds()
+                    / self.health_check_call_timeout.total_seconds()
+                ),
+            )
+        except ZeroDivisionError:
+            max_retries = 1
         async with httpx.AsyncClient() as client:
-            while True:
+            for _ in range(max_retries):
                 logger.info("Calling health endpoint")
                 try:
                     response = await client.get(
