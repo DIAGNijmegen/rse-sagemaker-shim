@@ -545,9 +545,9 @@ def log_external(*, level: int, msg: str, task_pk: str | None) -> None:
 
 class UserProcess(ProcUserMixin):
     def __init__(self) -> None:
-        self._process: asyncio.subprocess.Process
-        self._stdout_task: asyncio.Task[None]
-        self._stderr_task: asyncio.Task[None]
+        self._process: asyncio.subprocess.Process | None = None
+        self._stdout_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
         self._current_task_pk: str | None = None
 
     @staticmethod
@@ -559,6 +559,33 @@ class UserProcess(ProcUserMixin):
             return json.loads(
                 b64decode(encoded.encode("utf-8")).decode("utf-8")
             )
+
+    @property
+    def process(self) -> asyncio.subprocess.Process:
+        if self._process is None:
+            raise RuntimeError(
+                "The process needs to be initialised before use"
+            )
+        else:
+            return self._process
+
+    @property
+    def stdout_task(self) -> asyncio.Task[None]:
+        if self._stdout_task is None:
+            raise RuntimeError(
+                "The stdout task needs to be initialised before use"
+            )
+        else:
+            return self._stdout_task
+
+    @property
+    def stderr_task(self) -> asyncio.Task[None]:
+        if self._stderr_task is None:
+            raise RuntimeError(
+                "The stderr task needs to be initialised before use"
+            )
+        else:
+            return self._stderr_task
 
     @property
     def cmd(self) -> Any:
@@ -726,28 +753,26 @@ class UserProcess(ProcUserMixin):
         elif self.api_method == APIMethod.INVOKE:
             logger.info("Tearing down user process")
 
-            if hasattr(self, "process"):
+            if self._process is not None:
                 await asyncio.shield(self._terminate_group_and_wait())
 
-            try:
-                await asyncio.gather(self._stdout_task)
-            except AttributeError:
-                pass
-            except Exception as error:
-                logger.warning(
-                    f"Error gathering stdout stream task: {error}",
-                    exc_info=True,
-                )
+            if self._stdout_task is not None:
+                try:
+                    await self.stdout_task
+                except Exception as error:
+                    logger.warning(
+                        f"Error gathering stdout stream task: {error}",
+                        exc_info=True,
+                    )
 
-            try:
-                await asyncio.gather(self._stderr_task)
-            except AttributeError:
-                pass
-            except Exception as error:
-                logger.warning(
-                    f"Error gathering stderr stream task: {error}",
-                    exc_info=True,
-                )
+            if self._stderr_task is not None:
+                try:
+                    await self.stderr_task
+                except Exception as error:
+                    logger.warning(
+                        f"Error gathering stderr stream task: {error}",
+                        exc_info=True,
+                    )
 
             logger.info("User process teardown complete")
         else:
@@ -795,12 +820,12 @@ class UserProcess(ProcUserMixin):
 
         self._stdout_task = asyncio.create_task(
             self._stream_to_external(
-                stream=self._process.stdout, level=STDOUT_LEVEL
+                stream=self.process.stdout, level=STDOUT_LEVEL
             )
         )
         self._stderr_task = asyncio.create_task(
             self._stream_to_external(
-                stream=self._process.stderr, level=STDOUT_LEVEL + 10
+                stream=self.process.stderr, level=STDOUT_LEVEL + 10
             )
         )
 
@@ -866,23 +891,23 @@ class UserProcess(ProcUserMixin):
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _terminate_group_and_wait(self) -> None:  # noqa:C901
-        if self._process.returncode is not None:
+        if self.process.returncode is not None:
             return
 
         try:
-            os.killpg(self._process.pid, signal.SIGTERM)
+            os.killpg(self.process.pid, signal.SIGTERM)
         except ProcessLookupError:
             return
         except Exception:
             try:
-                self._process.terminate()
+                self.process.terminate()
             except Exception as error:
                 logger.info(error, exc_info=True)
 
         try:
             # Wait for graceful termination
             await asyncio.wait_for(
-                self._process.wait(),
+                self.process.wait(),
                 timeout=int(
                     os.environ.get(
                         "GRAND_CHALLENGE_COMPONENT_SIGTERM_GRACE_SECONDS", "5"
@@ -900,17 +925,17 @@ class UserProcess(ProcUserMixin):
             logger.info(error, exc_info=True)
 
         try:
-            os.killpg(self._process.pid, signal.SIGKILL)
+            os.killpg(self.process.pid, signal.SIGKILL)
         except ProcessLookupError:
             return
         except Exception:
             try:
-                self._process.kill()
+                self.process.kill()
             except Exception as error:
                 logger.info(error, exc_info=True)
 
         try:
-            await self._process.wait()
+            await self.process.wait()
             logger.info("Process group killed")
         except Exception as error:
             logger.warning(error, exc_info=True)
@@ -951,15 +976,15 @@ class UserProcess(ProcUserMixin):
         await self._start_user_process_and_stream_tasks()
 
         try:
-            await asyncio.gather(self._stdout_task, self._stderr_task)
-            return await self._process.wait()
+            await asyncio.gather(self.stdout_task, self.stderr_task)
+            return await self.process.wait()
 
         except asyncio.CancelledError:
             logger.info("Execution was cancelled")
             # shield so termination completes even if cancellation continues
             await asyncio.shield(self._terminate_group_and_wait())
             await self._cancel_tasks(
-                tasks=(self._stdout_task, self._stderr_task)
+                tasks=(self.stdout_task, self.stderr_task)
             )
             raise
 
@@ -967,7 +992,7 @@ class UserProcess(ProcUserMixin):
             logger.error(error, exc_info=True)
             await asyncio.shield(self._terminate_group_and_wait())
             await self._cancel_tasks(
-                tasks=(self._stdout_task, self._stderr_task)
+                tasks=(self.stdout_task, self.stderr_task)
             )
             raise
 
