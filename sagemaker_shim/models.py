@@ -714,9 +714,7 @@ class UserProcess(ProcUserMixin):
                     f"Unexpected error during setup: {error}", exc_info=True
                 )
                 await self.teardown()
-                raise UserSafeError(
-                    f"Failed to start user process: {error}"
-                ) from error
+                raise UserSafeError("Failed to start user process") from error
 
             logger.info("User process is healthy")
         else:
@@ -997,7 +995,7 @@ class UserProcess(ProcUserMixin):
                 ) from error
             except httpx.HTTPError as error:
                 raise UserSafeError(
-                    f"HTTP error calling invoke endpoint: {error}"
+                    "HTTP error calling invoke endpoint"
                 ) from error
 
             if response.status_code == 201:

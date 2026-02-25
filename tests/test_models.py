@@ -1087,7 +1087,7 @@ async def test_invoke_returns_0_on_201(minio, mocker, monkeypatch):
         (
             {"side_effect": httpx.HTTPError("error")},
             pytest.raises(
-                UserSafeError, match="HTTP error calling invoke endpoint: "
+                UserSafeError, match="HTTP error calling invoke endpoint"
             ),
         ),
         (
