@@ -976,8 +976,9 @@ class UserProcess(ProcUserMixin):
         await self._start_user_process_and_stream_tasks()
 
         try:
+            return_code = await self.process.wait()
             await asyncio.gather(self.stdout_task, self.stderr_task)
-            return await self.process.wait()
+            return return_code
 
         except asyncio.CancelledError:
             logger.info("Execution was cancelled")
