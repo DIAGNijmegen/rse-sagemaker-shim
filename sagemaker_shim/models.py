@@ -842,10 +842,6 @@ class UserProcess(ProcUserMixin):
                     raise UserSafeError(
                         "Health endpoint returned redirect response"
                     )
-                elif response.is_error:
-                    raise UserSafeError(
-                        "Health endpoint returned error response"
-                    )
                 else:
                     await asyncio.sleep(
                         self.health_check_call_timeout.total_seconds()

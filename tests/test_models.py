@@ -865,12 +865,6 @@ def test_user_process_api_method(monkeypatch):
                 match="Health endpoint returned redirect response",
             ),
         ),
-        (
-            400,
-            pytest.raises(
-                UserSafeError, match="Health endpoint returned error response"
-            ),
-        ),
     ],
 )
 @pytest.mark.asyncio
