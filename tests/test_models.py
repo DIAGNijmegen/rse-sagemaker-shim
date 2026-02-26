@@ -1,19 +1,24 @@
+import asyncio
 import getpass
 import grp
 import io
 import logging.config
 import os
 import pwd
+import re
 import tarfile
+from contextlib import nullcontext
 from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import (
+    APIMethod,
     AuxiliaryData,
     InferenceTask,
     ProcUserMixin,
@@ -513,7 +518,7 @@ def test_reset_linked_input(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_timeout(minio, monkeypatch, capsys):
+async def test_exec_timeout(minio, monkeypatch, capsys):
     cmd = ["sleep", "10"]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
@@ -803,3 +808,397 @@ def test_circular_cleanup(tmp_path):
     assert not dirty_path_dir.exists()
     assert target_dir_symlink_back.exists(follow_symlinks=False)
     assert target_dir_symlink_file_back.exists(follow_symlinks=False)
+
+
+def test_user_process_start_and_health_timeout(monkeypatch):
+    process = UserProcess()
+
+    assert process.start_and_health_timeout.total_seconds() == 300
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_START_AND_HEALTH_TIMEOUT_SECONDS", "42"
+    )
+
+    assert process.start_and_health_timeout.total_seconds() == 42
+
+
+def test_user_process_health_check_call_timeout(monkeypatch):
+    process = UserProcess()
+
+    assert process.health_check_call_timeout.total_seconds() == 10
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_HEALTH_CHECK_CALL_TIMEOUT_SECONDS", "42"
+    )
+
+    assert process.health_check_call_timeout.total_seconds() == 42
+
+
+def test_user_process_port(monkeypatch):
+    process = UserProcess()
+
+    assert process.port == 4743
+
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER_WEBSERVER_PORT", "1442")
+
+    assert process.port == 1442
+
+
+def test_user_process_api_method(monkeypatch):
+    process = UserProcess()
+
+    assert process.api_method == APIMethod.EXEC
+
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_API_METHOD", "invoke")
+
+    assert process.api_method == APIMethod.INVOKE
+
+
+@pytest.mark.parametrize(
+    "status_code, expectation",
+    [
+        (200, nullcontext()),
+        (
+            300,
+            pytest.raises(
+                UserSafeError,
+                match="Health endpoint returned redirect response",
+            ),
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_health_check(mocker, status_code, expectation):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.get",
+        return_value=httpx.Response(status_code),
+    )
+
+    p = UserProcess()
+
+    with expectation:
+        await p.health_check()
+
+
+@pytest.mark.asyncio
+async def test_invoke_start_and_health_timeout(monkeypatch, capsys):
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "invoke",
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_START_AND_HEALTH_TIMEOUT_SECONDS",
+        "0",
+    )
+    logging.config.dictConfig(LOGGING_CONFIG)
+    p = UserProcess()
+
+    with pytest.raises(
+        UserSafeError, match="Health check time limit exceeded"
+    ):
+        await p.setup()
+
+    captured = capsys.readouterr()
+    assert "Setting up user process for invoke mode" in captured.out
+    assert "Tearing down user process" in captured.out
+
+
+@pytest.mark.parametrize(
+    "patch_kwargs",
+    [
+        {"return_value": httpx.Response(100)},
+        {"side_effect": httpx.ConnectError("error")},
+    ],
+)
+@pytest.mark.asyncio
+async def test_invoke_start_and_health_call_timeout_sleep(
+    mocker, monkeypatch, patch_kwargs, capsys
+):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.get",
+        **patch_kwargs,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "invoke",
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_START_AND_HEALTH_TIMEOUT_SECONDS",
+        "2",
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_HEALTH_CHECK_CALL_TIMEOUT_SECONDS",
+        "1",
+    )
+    logging.config.dictConfig(LOGGING_CONFIG)
+    p = UserProcess()
+
+    with pytest.raises(
+        UserSafeError, match="Health check time limit exceeded"
+    ):
+        await p.setup()
+
+    captured = capsys.readouterr()
+    assert len(re.findall("Calling health endpoint", captured.out)) == 2
+
+
+@pytest.mark.asyncio
+async def test_invoke_setup_and_teardown(mocker, monkeypatch, capsys):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.get",
+        return_value=httpx.Response(200),
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "invoke",
+    )
+    logging.config.dictConfig(LOGGING_CONFIG)
+    p = UserProcess()
+
+    await p.setup()
+    await p.teardown()
+
+    captured = capsys.readouterr()
+    assert "Setting up user process for invoke mode" in captured.out
+    assert "Calling health endpoint" in captured.out
+    assert "Health endpoint returned status code 200" in captured.out
+    assert "User process is healthy" in captured.out
+    assert "Tearing down user process" in captured.out
+    assert "User process teardown complete" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_exec_setup_and_teardown(monkeypatch):
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "exec",
+    )
+    p = UserProcess()
+
+    await p.setup()
+
+    assert p._process is None
+
+    with nullcontext():
+        await p.teardown()
+
+
+@pytest.mark.parametrize("api_method", ["exec", "invoke"])
+@pytest.mark.asyncio
+async def test_teardown_without_setup(monkeypatch, api_method):
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        api_method,
+    )
+    process = UserProcess()
+
+    with nullcontext():
+        await process.teardown()
+
+
+@pytest.mark.asyncio
+async def test_invoke_call_timeout(minio, monkeypatch, capsys):
+    async def _sleep(*_, **__):
+        await asyncio.sleep(10)
+
+    process = UserProcess()
+    pk = str(uuid4())
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=f"tasks/{pk}",
+        timeout=timedelta(seconds=1),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "invoke",
+    )
+    monkeypatch.setattr(process, "run_inference", _sleep)
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
+
+    assert result.return_code == 1
+    assert int(result.invoke_duration.total_seconds()) == 1
+    assert result.exec_duration is None  # should only be set for exec
+
+    captured = capsys.readouterr()
+    # "Time limit exceeded" must be the last log for the user error
+    assert captured.err == (
+        '{"log": "Time limit exceeded", "level": "ERROR", "source": "stderr", '
+        f'"internal": false, "task": "{pk}"}}\n'
+    )
+
+
+@pytest.mark.asyncio
+async def test_invoke_returns_0_on_201(minio, mocker, monkeypatch):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.post",
+        return_value=httpx.Response(201),
+    )
+    process = UserProcess()
+
+    return_code = await process.invoke(timeout=timedelta(seconds=1))
+
+    assert return_code == 0
+
+
+@pytest.mark.parametrize(
+    "client_kwargs, expectation",
+    [
+        ({"return_value": httpx.Response(201)}, nullcontext()),
+        (
+            {"side_effect": httpx.TimeoutException("error")},
+            pytest.raises(UserSafeError, match="Invoke time limit exceeded"),
+        ),
+        (
+            {"side_effect": httpx.ConnectError("error")},
+            pytest.raises(
+                UserSafeError, match="Could not connect to invoke endpoint"
+            ),
+        ),
+        (
+            {"side_effect": httpx.HTTPError("error")},
+            pytest.raises(
+                UserSafeError, match="HTTP error calling invoke endpoint"
+            ),
+        ),
+        (
+            {"return_value": httpx.Response(100)},
+            pytest.raises(
+                UserSafeError,
+                match="Invoke endpoint returned status 100, expected 201",
+            ),
+        ),
+        (
+            {"return_value": httpx.Response(200)},
+            pytest.raises(
+                UserSafeError,
+                match="Invoke endpoint returned status 200, expected 201",
+            ),
+        ),
+        (
+            {"return_value": httpx.Response(300)},
+            pytest.raises(
+                UserSafeError,
+                match="Invoke endpoint returned status 300, expected 201",
+            ),
+        ),
+        (
+            {"return_value": httpx.Response(400)},
+            pytest.raises(
+                UserSafeError,
+                match="Invoke endpoint returned status 400, expected 201",
+            ),
+        ),
+        (
+            {"return_value": httpx.Response(500)},
+            pytest.raises(
+                UserSafeError,
+                match="Invoke endpoint returned status 500, expected 201",
+            ),
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_invoke_raises_on_non_201(
+    minio, mocker, monkeypatch, client_kwargs, expectation
+):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.post",
+        **client_kwargs,
+    )
+    process = UserProcess()
+
+    with expectation:
+        await process.invoke(timeout=timedelta(seconds=1))
+
+
+@pytest.mark.asyncio
+async def test_invoke_result_duration(minio, mocker, monkeypatch):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.post",
+        return_value=httpx.Response(201),
+    )
+    process = UserProcess()
+    pk = str(uuid4())
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=f"tasks/{pk}",
+        timeout=timedelta(seconds=1),
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "invoke",
+    )
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
+
+    assert result.return_code == 0
+    assert result.exec_duration is None
+    assert result.invoke_duration is not None
+
+
+@pytest.mark.asyncio
+async def test_exec_result_duration(minio, monkeypatch):
+    process = UserProcess()
+    pk = str(uuid4())
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=minio.output_bucket_name,
+        output_prefix=f"tasks/{pk}",
+        timeout=timedelta(seconds=1),
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "exec",
+    )
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
+
+    assert result.return_code == 0
+    assert result.exec_duration is not None
+    assert result.invoke_duration is None

@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
 import aioboto3
+import httpx
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
@@ -535,7 +536,7 @@ class InferenceResult(BaseModel):
     sagemaker_shim_version: str = version("sagemaker-shim")
 
 
-def log_external(*, level: int, msg: str, task_pk: str) -> None:
+def log_external(*, level: int, msg: str, task_pk: str | None) -> None:
     """Send a message to the external logger"""
     logger.log(
         level=level, msg=msg, extra={"internal": False, "task_pk": task_pk}
@@ -543,10 +544,11 @@ def log_external(*, level: int, msg: str, task_pk: str) -> None:
 
 
 class UserProcess(ProcUserMixin):
-    process: asyncio.subprocess.Process
-    stdout_task: asyncio.Task[None]
-    stderr_task: asyncio.Task[None]
-    current_task_pk: str
+    def __init__(self) -> None:
+        self._process: asyncio.subprocess.Process | None = None
+        self._stdout_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
+        self._current_task_pk: str | None = None
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
@@ -557,6 +559,33 @@ class UserProcess(ProcUserMixin):
             return json.loads(
                 b64decode(encoded.encode("utf-8")).decode("utf-8")
             )
+
+    @property
+    def process(self) -> asyncio.subprocess.Process:
+        if self._process is None:
+            raise RuntimeError(
+                "The process needs to be initialised before use"
+            )
+        else:
+            return self._process
+
+    @property
+    def stdout_task(self) -> asyncio.Task[None]:
+        if self._stdout_task is None:
+            raise RuntimeError(
+                "The stdout task needs to be initialised before use"
+            )
+        else:
+            return self._stdout_task
+
+    @property
+    def stderr_task(self) -> asyncio.Task[None]:
+        if self._stderr_task is None:
+            raise RuntimeError(
+                "The stderr task needs to be initialised before use"
+            )
+        else:
+            return self._stderr_task
 
     @property
     def cmd(self) -> Any:
@@ -645,7 +674,41 @@ class UserProcess(ProcUserMixin):
         return env
 
     @property
-    def api_method(self) -> Any:
+    def start_and_health_timeout(self) -> timedelta:
+        seconds = int(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_START_AND_HEALTH_TIMEOUT_SECONDS",
+                "300",
+            )
+        )
+        health_check_timeout = timedelta(seconds=seconds)
+        logger.debug(f"{health_check_timeout=}")
+        return health_check_timeout
+
+    @property
+    def health_check_call_timeout(self) -> timedelta:
+        seconds = int(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_HEALTH_CHECK_CALL_TIMEOUT_SECONDS",
+                "10",
+            )
+        )
+        health_check_call_timeout = timedelta(seconds=seconds)
+        logger.debug(f"{health_check_call_timeout=}")
+        return health_check_call_timeout
+
+    @property
+    def port(self) -> int:
+        user_webserver_port = int(
+            os.environ.get(
+                "GRAND_CHALLENGE_COMPONENT_USER_WEBSERVER_PORT", "4743"
+            )
+        )
+        logger.debug(f"{user_webserver_port=}")
+        return user_webserver_port
+
+    @property
+    def api_method(self) -> APIMethod:
         api_method = APIMethod(
             os.environ.get(
                 "GRAND_CHALLENGE_COMPONENT_API_METHOD", "exec"
@@ -657,19 +720,71 @@ class UserProcess(ProcUserMixin):
     async def setup(self) -> None:
         if self.api_method == APIMethod.EXEC:
             return
+        elif self.api_method == APIMethod.INVOKE:
+            logger.info("Setting up user process for invoke mode")
+
+            try:
+                await asyncio.wait_for(
+                    self.start_process_and_wait_for_health(),
+                    timeout=self.start_and_health_timeout.total_seconds(),
+                )
+            except TimeoutError as error:
+                await self.teardown()
+                raise UserSafeError(
+                    "Health check time limit exceeded"
+                ) from error
+            except UserSafeError:
+                await self.teardown()
+                raise
+            except Exception as error:
+                logger.error(
+                    f"Unexpected error during setup: {error}", exc_info=True
+                )
+                await self.teardown()
+                raise UserSafeError("Failed to start user process") from error
+
+            logger.info("User process is healthy")
         else:
             raise NotImplementedError
 
     async def teardown(self) -> None:
         if self.api_method == APIMethod.EXEC:
             return
+        elif self.api_method == APIMethod.INVOKE:
+            logger.info("Tearing down user process")
+
+            if self._process is not None:
+                await asyncio.shield(self._terminate_group_and_wait())
+
+            if self._stdout_task is not None:
+                try:
+                    await self.stdout_task
+                except Exception as error:
+                    logger.warning(
+                        f"Error gathering stdout stream task: {error}",
+                        exc_info=True,
+                    )
+
+            if self._stderr_task is not None:
+                try:
+                    await self.stderr_task
+                except Exception as error:
+                    logger.warning(
+                        f"Error gathering stderr stream task: {error}",
+                        exc_info=True,
+                    )
+
+            logger.info("User process teardown complete")
         else:
             raise NotImplementedError
 
-    async def run_inference(self, *, task_pk: str) -> int:
-        self.current_task_pk = task_pk
+    async def run_inference(self, *, task: "InferenceTask") -> int:
+        self._current_task_pk = task.pk
         if self.api_method == APIMethod.EXEC:
             return await self.execute()
+        elif self.api_method == APIMethod.INVOKE:
+            logger.info(f"Calling invoke endpoint for task {task.pk}")
+            return await self.invoke(timeout=task.timeout)
         else:
             raise NotImplementedError
 
@@ -677,7 +792,7 @@ class UserProcess(ProcUserMixin):
         logger.info(f"Calling {self.proc_args=}")
 
         try:
-            self.process = await asyncio.create_subprocess_exec(
+            self._process = await asyncio.create_subprocess_exec(
                 *self.proc_args,
                 user=self.proc_user.uid,
                 group=self.proc_user.gid,
@@ -703,16 +818,70 @@ class UserProcess(ProcUserMixin):
                 "CMD instructions does not exist"
             ) from error
 
-        self.stdout_task = asyncio.create_task(
+        self._stdout_task = asyncio.create_task(
             self._stream_to_external(
                 stream=self.process.stdout, level=STDOUT_LEVEL
             )
         )
-        self.stderr_task = asyncio.create_task(
+        self._stderr_task = asyncio.create_task(
             self._stream_to_external(
                 stream=self.process.stderr, level=STDOUT_LEVEL + 10
             )
         )
+
+    async def health_check(self) -> None:
+        """Wait for the health endpoint to return 200"""
+        try:
+            max_retries = max(
+                1,
+                int(
+                    self.start_and_health_timeout.total_seconds()
+                    / self.health_check_call_timeout.total_seconds()
+                ),
+            )
+        except ZeroDivisionError:
+            max_retries = 1
+        async with httpx.AsyncClient() as client:
+            for _ in range(max_retries):
+                logger.info("Calling health endpoint")
+                try:
+                    response = await client.get(
+                        f"http://127.0.0.1:{self.port}/health",
+                        timeout=self.health_check_call_timeout.total_seconds(),
+                    )
+                except httpx.TimeoutException:
+                    continue
+                except httpx.ConnectError:
+                    await asyncio.sleep(
+                        self.health_check_call_timeout.total_seconds()
+                    )
+                    continue
+
+                logger.info(
+                    f"Health endpoint returned status code {response.status_code}"
+                )
+
+                if response.status_code == 200:
+                    break
+                elif response.is_redirect:
+                    raise UserSafeError(
+                        "Health endpoint returned redirect response"
+                    )
+                else:
+                    await asyncio.sleep(
+                        self.health_check_call_timeout.total_seconds()
+                    )
+
+    async def start_process_and_wait_for_health(self) -> None:
+        try:
+            await self._start_user_process_and_stream_tasks()
+        except UserSafeError as error:
+            raise UserSafeError(f"Could not start server: {error}") from error
+
+        try:
+            await self.health_check()
+        except UserSafeError as error:
+            raise UserSafeError(f"Health check failed: {error}") from error
 
     @staticmethod
     async def _cancel_tasks(*, tasks: Iterable[asyncio.Task[None]]) -> None:
@@ -785,7 +954,7 @@ class UserProcess(ProcUserMixin):
                 log_external(
                     level=logging.WARNING,
                     msg="WARNING: A log line was skipped as it was too long",
-                    task_pk=self.current_task_pk,
+                    task_pk=self._current_task_pk,
                 )
                 continue
 
@@ -795,7 +964,7 @@ class UserProcess(ProcUserMixin):
             log_external(
                 level=level,
                 msg=line.replace(b"\x00", b"").decode("utf-8"),
-                task_pk=self.current_task_pk,
+                task_pk=self._current_task_pk,
             )
 
     async def execute(self) -> int:
@@ -807,8 +976,9 @@ class UserProcess(ProcUserMixin):
         await self._start_user_process_and_stream_tasks()
 
         try:
+            return_code = await self.process.wait()
             await asyncio.gather(self.stdout_task, self.stderr_task)
-            return await self.process.wait()
+            return return_code
 
         except asyncio.CancelledError:
             logger.info("Execution was cancelled")
@@ -830,6 +1000,33 @@ class UserProcess(ProcUserMixin):
         finally:
             # best-effort final cleanup; shielded to avoid being interrupted
             await asyncio.shield(self._terminate_group_and_wait())
+
+    async def invoke(self, *, timeout: timedelta) -> int:
+        """Wait for the invoke endpoint to return 201"""
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"http://127.0.0.1:{self.port}/invoke",
+                    timeout=timeout.total_seconds(),
+                )
+            except httpx.TimeoutException as error:
+                raise UserSafeError("Invoke time limit exceeded") from error
+            except httpx.ConnectError as error:
+                raise UserSafeError(
+                    "Could not connect to invoke endpoint"
+                ) from error
+            except httpx.HTTPError as error:
+                raise UserSafeError(
+                    "HTTP error calling invoke endpoint"
+                ) from error
+
+            if response.status_code == 201:
+                return 0
+            else:
+                raise UserSafeError(
+                    f"Invoke endpoint returned status {response.status_code}, "
+                    f"expected 201"
+                )
 
 
 class InferenceTask(BaseModel):
@@ -937,11 +1134,11 @@ class InferenceTask(BaseModel):
 
             await self.download_input(s3_resources=s3_resources)
 
-            exec_start = time.monotonic()
+            start = time.monotonic()
 
             try:
                 return_code = await asyncio.wait_for(
-                    user_process.run_inference(task_pk=self.pk),
+                    user_process.run_inference(task=self),
                     timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
@@ -952,7 +1149,7 @@ class InferenceTask(BaseModel):
                 )
                 return_code = 1
 
-            exec_duration = time.monotonic() - exec_start
+            duration = time.monotonic() - start
 
             logger.info(f"{return_code=}")
 
@@ -965,8 +1162,16 @@ class InferenceTask(BaseModel):
                 pk=self.pk,
                 return_code=return_code,
                 outputs=outputs,
-                exec_duration=timedelta(seconds=exec_duration),
-                invoke_duration=None,
+                exec_duration=(
+                    timedelta(seconds=duration)
+                    if user_process.api_method == APIMethod.EXEC
+                    else None
+                ),
+                invoke_duration=(
+                    timedelta(seconds=duration)
+                    if user_process.api_method == APIMethod.INVOKE
+                    else None
+                ),
             )
         finally:
             self.reset_io()
