@@ -96,18 +96,21 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
     captured = capsys.readouterr()
     assert (
         '{"log": "hellostdout", "level": "INFO", "source": "stdout", '
-        f'"internal": false, "task": "{pk}"}}\n'
+        f'"internal": false, "inference_result_skipped": false, '
+        f'"task": "{pk}"}}\n'
     ) in captured.out
     assert (
         '{"log": "return_code=0", "level": "INFO", "source": "stdout", '
-        '"internal": true, "task": null}'
+        '"internal": true, "inference_result_skipped": false, '
+        '"task": null}'
     ) in captured.out
     assert captured.err == (
         '{"log": "WARNING: A log line was skipped as it was too long", '
         '"level": "WARNING", "source": "stderr", "internal": false, '
-        f'"task": "{pk}"}}\n'
+        f'"inference_result_skipped": false, "task": "{pk}"}}\n'
         '{"log": "hellostderr", "level": "WARNING", "source": "stderr", '
-        f'"internal": false, "task": "{pk}"}}\n'
+        f'"internal": false, "inference_result_skipped": false, '
+        f'"task": "{pk}"}}\n'
     )
 
     # To obtain inferences, Amazon SageMaker sends a POST request to the

@@ -191,7 +191,8 @@ def test_bad_command_inference_from_task_list(minio, monkeypatch):
     )
     assert (
         f'{{"log": "Stopping due to failure of task {pk1}", "level": "ERROR", '
-        '"source": "stderr", "internal": true, "task": null}' in result.output
+        '"source": "stderr", "internal": true, '
+        '"inference_result_skipped": false, "task": null}' in result.output
     )
     assert result.exit_code == 0
 
@@ -316,7 +317,8 @@ def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
     )
     assert (
         f'{{"log": "Stopping due to failure of task {pk1}", "level": "ERROR", '
-        '"source": "stderr", "internal": true, "task": null}' in result.output
+        '"source": "stderr", "internal": true, '
+        '"inference_result_skipped": false, "task": null}' in result.output
     )
     assert result.exit_code == 0
 
@@ -346,7 +348,8 @@ def test_logging_setup(minio, monkeypatch):
 
     assert (
         '{"log": "hello", "level": "INFO", '
-        f'"source": "stdout", "internal": false, "task": "{pk}"}}'
+        f'"source": "stdout", "internal": false, '
+        f'"inference_result_skipped": false, "task": "{pk}"}}'
     ) in result.output
     assert "Setting up Auxiliary Data" in result.output
     assert "Cleaning up Auxiliary Data" in result.output
@@ -379,7 +382,8 @@ def test_logging_stderr_setup(minio, monkeypatch):
 
     assert (
         '{"log": "hello", "level": "WARNING", '
-        f'"source": "stderr", "internal": false, "task": "{pk}"}}'
+        f'"source": "stderr", "internal": false, '
+        f'"inference_result_skipped": false, "task": "{pk}"}}'
     ) in result.output
 
 
@@ -405,7 +409,8 @@ def test_memory_limit_undefined(minio, monkeypatch):
 
     assert (
         '{"log": "Not setting a memory limit", "level": "INFO", '
-        '"source": "stdout", "internal": true, "task": null}'
+        '"source": "stdout", "internal": true, '
+        '"inference_result_skipped": false, "task": null}'
     ) in result.output
 
 
@@ -439,7 +444,8 @@ def test_memory_limit_defined(minio, monkeypatch):
 
     assert (
         '{"log": "Setting memory limit to 1337 MB", "level": "INFO", '
-        '"source": "stdout", "internal": true, "task": null}'
+        '"source": "stdout", "internal": true, '
+        '"inference_result_skipped": false, "task": null}'
     ) in result.output
 
 
@@ -486,5 +492,6 @@ def test_aux_data_failure(minio, monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert result.stderr.splitlines()[-1] == (
         '{"log": "Could not setup model: Tarfile could not be extracted", '
-        '"level": "ERROR", "source": "stderr", "internal": false, "task": null}'
+        '"level": "ERROR", "source": "stderr", "internal": false, '
+        '"inference_result_skipped": false, "task": null}'
     )
