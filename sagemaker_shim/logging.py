@@ -28,6 +28,9 @@ class JSONFormatter(logging.Formatter):
             source = "stderr"
 
         internal = getattr(record, "internal", True)
+        inference_result_skipped = getattr(
+            record, "inference_result_skipped", False
+        )
         task_pk = getattr(record, "task_pk", None)
 
         return "\n".join(
@@ -37,6 +40,7 @@ class JSONFormatter(logging.Formatter):
                     "level": record.levelname,
                     "source": source,
                     "internal": internal,
+                    "inference_result_skipped": inference_result_skipped,
                     "task": task_pk,
                 }
             )
