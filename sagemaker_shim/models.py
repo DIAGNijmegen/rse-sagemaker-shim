@@ -736,12 +736,6 @@ class UserProcess(ProcUserMixin):
             except UserSafeError:
                 await self.teardown()
                 raise
-            except Exception as error:
-                logger.error(
-                    f"Unexpected error during setup: {error}", exc_info=True
-                )
-                await self.teardown()
-                raise UserSafeError("Failed to start user process") from error
 
             logger.info("User process is healthy")
         else:
