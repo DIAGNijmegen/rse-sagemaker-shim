@@ -95,14 +95,26 @@ async def invoke(tasks: str, file: str) -> None:
             try:
                 await auxiliary_data.setup()
             except UserSafeError as error:
-                logger.error(msg=str(error), extra={"internal": False})
+                logger.error(
+                    msg=str(error),
+                    extra={
+                        "internal": False,
+                        "inference_result_skipped": True,
+                    },
+                )
                 # If subprocess errors are handled our process should exit cleanly
                 raise SystemExit(0) from error
 
             try:
                 await user_process.setup()
             except UserSafeError as error:
-                logger.error(msg=str(error), extra={"internal": False})
+                logger.error(
+                    msg=str(error),
+                    extra={
+                        "internal": False,
+                        "inference_result_skipped": True,
+                    },
+                )
                 # If subprocess errors are handled our process should exit cleanly
                 raise SystemExit(0) from error
 

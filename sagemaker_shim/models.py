@@ -733,15 +733,16 @@ class UserProcess(ProcUserMixin):
                 raise UserSafeError(
                     "Health check time limit exceeded"
                 ) from error
-            except UserSafeError:
+            except UserSafeError as error:
                 await self.teardown()
-                raise
-            except Exception as error:
-                logger.error(
-                    f"Unexpected error during setup: {error}", exc_info=True
+                log_external(
+                    level=logging.ERROR,
+                    msg=str(error),
+                    task_pk=self._current_task_pk,
                 )
-                await self.teardown()
-                raise UserSafeError("Failed to start user process") from error
+                raise UserSafeError(
+                    "Failed to start the algorithm container's inference server"
+                ) from error
 
             logger.info("User process is healthy")
         else:
