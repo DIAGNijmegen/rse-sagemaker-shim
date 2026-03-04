@@ -26,7 +26,7 @@ from tests.utils import encode_b64j
 
 
 @pytest.mark.asyncio
-async def test_input_download(minio, tmp_path, monkeypatch):
+async def test_input_download(local_s3, tmp_path, monkeypatch):
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
         str(tmp_path),
@@ -38,17 +38,17 @@ async def test_input_download(minio, tmp_path, monkeypatch):
         pk=pk,
         inputs=[
             InferenceIO(
-                bucket_name=minio.input_bucket_name,
+                bucket_name=local_s3.input_bucket_name,
                 bucket_key=f"{prefix}/root.bin",
                 relative_path=Path("root.bin"),
             ),
             InferenceIO(
-                bucket_name=minio.input_bucket_name,
+                bucket_name=local_s3.input_bucket_name,
                 bucket_key=f"{prefix}/sub/dir.bin",
                 relative_path=Path("sub/dir.bin"),
             ),
         ],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(),
     )
@@ -63,13 +63,13 @@ async def test_input_download(minio, tmp_path, monkeypatch):
     async with get_s3_resources() as s3_resources:
         async with s3_resources.semaphore:
             await s3_resources.client.upload_fileobj(
-                root_f, minio.input_bucket_name, f"{prefix}/root.bin"
+                root_f, local_s3.input_bucket_name, f"{prefix}/root.bin"
             )
             await s3_resources.client.upload_fileobj(
-                sub_f, minio.input_bucket_name, f"{prefix}/sub/dir.bin"
+                sub_f, local_s3.input_bucket_name, f"{prefix}/sub/dir.bin"
             )
             response = await s3_resources.client.list_objects_v2(
-                Bucket=minio.input_bucket_name,
+                Bucket=local_s3.input_bucket_name,
                 Prefix=prefix,
             )
 
@@ -92,7 +92,7 @@ async def test_input_download(minio, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_input_decompress(minio, tmp_path, monkeypatch):
+async def test_input_decompress(local_s3, tmp_path, monkeypatch):
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
         str(tmp_path),
@@ -103,13 +103,13 @@ async def test_input_decompress(minio, tmp_path, monkeypatch):
         pk=pk,
         inputs=[
             InferenceIO(
-                bucket_name=minio.input_bucket_name,
+                bucket_name=local_s3.input_bucket_name,
                 bucket_key=f"{prefix}/sub/predictions.zip",
                 relative_path=Path("sub/predictions.zip"),
                 decompress=True,
             ),
         ],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(),
     )
@@ -123,10 +123,12 @@ async def test_input_decompress(minio, tmp_path, monkeypatch):
     async with get_s3_resources() as s3_resources:
         async with s3_resources.semaphore:
             await s3_resources.client.upload_fileobj(
-                sub_f, minio.input_bucket_name, f"{prefix}/sub/predictions.zip"
+                sub_f,
+                local_s3.input_bucket_name,
+                f"{prefix}/sub/predictions.zip",
             )
             response = await s3_resources.client.list_objects_v2(
-                Bucket=minio.input_bucket_name,
+                Bucket=local_s3.input_bucket_name,
                 Prefix=prefix,
             )
 
@@ -145,7 +147,7 @@ async def test_input_decompress(minio, tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_invoke_with_dodgy_file(
-    client, minio, tmp_path, monkeypatch, capsys
+    client, local_s3, tmp_path, monkeypatch, capsys
 ):
     input_path = tmp_path / "input"
     linked_input_parent = tmp_path / "linked-input"
@@ -164,13 +166,13 @@ async def test_invoke_with_dodgy_file(
         "pk": pk,
         "inputs": [
             {
-                "bucket_name": minio.input_bucket_name,
+                "bucket_name": local_s3.input_bucket_name,
                 "bucket_key": f"{prefix}/sub/dodgy.zip",
                 "relative_path": "sub/dodgy.zip",
                 "decompress": True,
             }
         ],
-        "output_bucket_name": minio.output_bucket_name,
+        "output_bucket_name": local_s3.output_bucket_name,
         "output_prefix": prefix,
         "timeout": "PT0S",
     }
@@ -191,7 +193,7 @@ async def test_invoke_with_dodgy_file(
     async with get_s3_resources() as s3_resources:
         async with s3_resources.semaphore:
             await s3_resources.client.upload_fileobj(
-                sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
+                sub_f, local_s3.input_bucket_name, f"{prefix}/sub/dodgy.zip"
             )
 
     monkeypatch.setenv(
@@ -217,7 +219,7 @@ async def test_invoke_with_dodgy_file(
 
 @pytest.mark.asyncio
 async def test_invoke_with_non_zip(
-    client, minio, tmp_path, monkeypatch, capsys
+    client, local_s3, tmp_path, monkeypatch, capsys
 ):
     input_path = tmp_path / "input"
     linked_input_parent = tmp_path / "linked-input"
@@ -236,13 +238,13 @@ async def test_invoke_with_non_zip(
         "pk": pk,
         "inputs": [
             {
-                "bucket_name": minio.input_bucket_name,
+                "bucket_name": local_s3.input_bucket_name,
                 "bucket_key": f"{prefix}/sub/dodgy.zip",
                 "relative_path": "sub/dodgy.zip",
                 "decompress": True,
             }
         ],
-        "output_bucket_name": minio.output_bucket_name,
+        "output_bucket_name": local_s3.output_bucket_name,
         "output_prefix": prefix,
         "timeout": "PT0S",
     }
@@ -261,7 +263,7 @@ async def test_invoke_with_non_zip(
     async with get_s3_resources() as s3_resources:
         async with s3_resources.semaphore:
             await s3_resources.client.upload_fileobj(
-                sub_f, minio.input_bucket_name, f"{prefix}/sub/dodgy.zip"
+                sub_f, local_s3.input_bucket_name, f"{prefix}/sub/dodgy.zip"
             )
 
     monkeypatch.setenv(
@@ -284,13 +286,13 @@ async def test_invoke_with_non_zip(
 
 
 @pytest.mark.asyncio
-async def test_output_upload(minio, tmp_path, monkeypatch):
+async def test_output_upload(local_s3, tmp_path, monkeypatch):
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(),
     )
@@ -319,17 +321,17 @@ async def test_output_upload(minio, tmp_path, monkeypatch):
 
         async with s3_resources.semaphore:
             response = await s3_resources.client.list_objects_v2(
-                Bucket=minio.output_bucket_name,
+                Bucket=local_s3.output_bucket_name,
                 Prefix=prefix,
             )
             await s3_resources.client.download_fileobj(
                 Fileobj=root_f,
-                Bucket=minio.output_bucket_name,
+                Bucket=local_s3.output_bucket_name,
                 Key=f"tasks/{task.pk}/root.bin",
             )
             await s3_resources.client.download_fileobj(
                 Fileobj=sub_f,
-                Bucket=minio.output_bucket_name,
+                Bucket=local_s3.output_bucket_name,
                 Key=f"tasks/{task.pk}/sub/dir.bin",
             )
 
@@ -353,7 +355,7 @@ async def test_output_upload(minio, tmp_path, monkeypatch):
     ),
 )
 async def test_inference_result_upload(
-    minio, tmp_path, monkeypatch, cmd, expected_return_code
+    local_s3, tmp_path, monkeypatch, cmd, expected_return_code
 ):
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
@@ -361,7 +363,7 @@ async def test_inference_result_upload(
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(seconds=10),
     )
@@ -383,7 +385,7 @@ async def test_inference_result_upload(
         async with s3_resources.semaphore:
             await s3_resources.client.download_fileobj(
                 Fileobj=serialised_invocation,
-                Bucket=minio.output_bucket_name,
+                Bucket=local_s3.output_bucket_name,
                 Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
             )
 
@@ -406,7 +408,7 @@ async def test_inference_result_upload(
     ),
 )
 async def test_inference_result_signed(
-    minio, tmp_path, monkeypatch, cmd, expected_return_code
+    local_s3, tmp_path, monkeypatch, cmd, expected_return_code
 ):
     pk = str(uuid4())
     signing_key = secrets.token_hex()
@@ -415,7 +417,7 @@ async def test_inference_result_signed(
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(seconds=10),
     )
@@ -437,7 +439,7 @@ async def test_inference_result_signed(
 
         async with s3_resources.semaphore:
             response = await s3_resources.client.get_object(
-                Bucket=minio.output_bucket_name,
+                Bucket=local_s3.output_bucket_name,
                 Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
             )
 
@@ -481,7 +483,7 @@ def test_folder_cleanup(tmp_path):
     ),
 )
 async def test_exec_duration_set(
-    minio, tmp_path, monkeypatch, cmd, expected_return_code
+    local_s3, tmp_path, monkeypatch, cmd, expected_return_code
 ):
     pk = str(uuid4())
     signing_key = secrets.token_hex()
@@ -490,7 +492,7 @@ async def test_exec_duration_set(
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(seconds=10),
     )
@@ -512,7 +514,7 @@ async def test_exec_duration_set(
 
         async with s3_resources.semaphore:
             response = await s3_resources.client.get_object(
-                Bucket=minio.output_bucket_name,
+                Bucket=local_s3.output_bucket_name,
                 Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
             )
 
@@ -532,7 +534,7 @@ async def test_exec_duration_set(
 
 
 @pytest.mark.asyncio
-async def test_invoke_duration_set(minio, tmp_path, mocker, monkeypatch):
+async def test_invoke_duration_set(local_s3, tmp_path, mocker, monkeypatch):
     mocker.patch(
         "sagemaker_shim.models.httpx.AsyncClient.post",
         return_value=httpx.Response(201),
@@ -544,7 +546,7 @@ async def test_invoke_duration_set(minio, tmp_path, mocker, monkeypatch):
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(seconds=10),
     )
@@ -570,7 +572,7 @@ async def test_invoke_duration_set(minio, tmp_path, mocker, monkeypatch):
 
         async with s3_resources.semaphore:
             response = await s3_resources.client.get_object(
-                Bucket=minio.output_bucket_name,
+                Bucket=local_s3.output_bucket_name,
                 Key=f"tasks/{pk}/.sagemaker_shim/inference_result.json",
             )
 

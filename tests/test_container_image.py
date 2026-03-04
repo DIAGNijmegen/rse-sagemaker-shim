@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from tests import __version__
-from tests.conftest import minio_container
+from tests.conftest import local_s3_container
 from tests.utils import (
     encode_b64j,
     get_image_config,
@@ -72,10 +72,10 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
         )
         pull_image(client=client, repo_tag=new_tag)
 
-        with minio_container() as minio:
-            container_env = copy.deepcopy(minio.env)
+        with local_s3_container() as local_s3:
+            container_env = copy.deepcopy(local_s3.env)
 
-            container_env["AWS_S3_ENDPOINT_URL"] = "http://minio:9000"
+            container_env["AWS_S3_ENDPOINT_URL"] = "http://local-s3:8333"
 
             container = client.containers.run(
                 image=new_tag,
@@ -92,7 +92,7 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
                 # train and serve arguments
                 init=False,
                 environment=container_env,
-                links={minio.container.name: "minio"},
+                links={local_s3.container.name: "local-s3"},
                 user=0,
             )
 
@@ -146,7 +146,7 @@ def test_container_responds_to_execution_parameters():
 @pytest.mark.skipif(
     sys.platform != "linux", reason="does not run outside linux"
 )
-def test_invocations_endpoint(minio):
+def test_invocations_endpoint(local_s3):
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
     # /invocations endpoint.
@@ -154,7 +154,7 @@ def test_invocations_endpoint(minio):
     data = {
         "pk": str(uuid4()),
         "inputs": [],
-        "output_bucket_name": minio.output_bucket_name,
+        "output_bucket_name": local_s3.output_bucket_name,
         "output_prefix": f"test/{pk}",
         "timeout": "PT10S",
     }
@@ -178,7 +178,7 @@ def test_invocations_endpoint(minio):
 @pytest.mark.skipif(
     sys.platform != "linux", reason="does not run outside linux"
 )
-def test_alpine_image(minio):
+def test_alpine_image(local_s3):
     # https://github.com/JonathonReinhart/staticx/issues/143
     host_port = 8081
     with _container(
@@ -190,7 +190,7 @@ def test_alpine_image(minio):
         data = {
             "pk": pk,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"test/{pk}",
             "timeout": "PT10S",
         }

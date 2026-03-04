@@ -6,6 +6,7 @@ from pathlib import Path
 from time import sleep
 from typing import NamedTuple
 
+import boto3
 import docker
 import pytest
 from docker.models.containers import Container
@@ -35,7 +36,7 @@ def client():
     return TestClient(app=sagemaker_shim.app.app)
 
 
-class Minio(NamedTuple):
+class LocalS3(NamedTuple):
     input_bucket_name: str
     output_bucket_name: str
     container: Container
@@ -44,56 +45,59 @@ class Minio(NamedTuple):
 
 
 @contextmanager
-def minio_container():
+def local_s3_container():
     input_bucket_name = "test-inputs"
     output_bucket_name = "test-outputs"
 
-    client = docker.from_env()
-    minio = client.containers.run(
-        image="minio/minio:latest",
-        entrypoint="/bin/sh",
-        command=[
-            "-c",
-            f"mkdir -p /data/{input_bucket_name} /data/{output_bucket_name} "
-            "&& minio --compat server /data",
-        ],
-        ports={9000: None},
+    environment = {
+        "AWS_ACCESS_KEY_ID": "s3admin",
+        "AWS_SECRET_ACCESS_KEY": "s3admin",
+    }
+
+    docker_client = docker.from_env()
+    local_s3 = docker_client.containers.run(
+        image="chrislusf/seaweedfs",
+        command="mini",
+        ports={8333: None},
         auto_remove=True,
         detach=True,
         init=True,
+        environment=environment,
     )
 
     # Wait for startup
     sleep(1)
 
-    mpatch = pytest.MonkeyPatch()
-
     try:
-        minio.reload()  # required to get ports
-        port = minio.ports["9000/tcp"][0]["HostPort"]
+        local_s3.reload()  # required to get ports
+        port = local_s3.ports["8333/tcp"][0]["HostPort"]
 
-        minio_env = {
-            "AWS_ACCESS_KEY_ID": "minioadmin",
-            "AWS_SECRET_ACCESS_KEY": "minioadmin",
-            "AWS_S3_ENDPOINT_URL": f"http://localhost:{port}",
-        }
+        s3_endpoint_url = f"http://localhost:{port}"
 
-        for key, value in minio_env.items():
+        environment["AWS_S3_ENDPOINT_URL"] = s3_endpoint_url
+
+        mpatch = pytest.MonkeyPatch()
+        for key, value in environment.items():
             mpatch.setenv(key, value)
 
-        yield Minio(
+        s3_client = boto3.client("s3", endpoint_url=s3_endpoint_url)
+
+        for bucket_name in {input_bucket_name, output_bucket_name}:
+            s3_client.create_bucket(Bucket=bucket_name)
+
+        yield LocalS3(
             input_bucket_name=input_bucket_name,
             output_bucket_name=output_bucket_name,
-            container=minio,
+            container=local_s3,
             port=port,
-            env=minio_env,
+            env=environment,
         )
     finally:
         mpatch.undo()
-        minio.stop(timeout=0)
+        local_s3.stop(timeout=0)
 
 
 @pytest.fixture(scope="session")
-def minio():
-    with minio_container() as m:
+def local_s3():
+    with local_s3_container() as m:
         yield m
