@@ -75,7 +75,7 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
         with local_s3_container() as local_s3:
             container_env = copy.deepcopy(local_s3.env)
 
-            container_env["AWS_S3_ENDPOINT_URL"] = "http://locals3:9000"
+            container_env["AWS_S3_ENDPOINT_URL"] = "http://local-s3:8333"
 
             container = client.containers.run(
                 image=new_tag,
@@ -92,7 +92,7 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
                 # train and serve arguments
                 init=False,
                 environment=container_env,
-                links={local_s3.container.name: "locals3"},
+                links={local_s3.container.name: "local-s3"},
                 user=0,
             )
 

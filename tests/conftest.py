@@ -54,10 +54,6 @@ def local_s3_container():
         "AWS_SECRET_ACCESS_KEY": "s3admin",
     }
 
-    mpatch = pytest.MonkeyPatch()
-    for key, value in environment.items():
-        mpatch.setenv(key, value)
-
     docker_client = docker.from_env()
     local_s3 = docker_client.containers.run(
         image="chrislusf/seaweedfs",
@@ -78,7 +74,11 @@ def local_s3_container():
 
         s3_endpoint_url = f"http://localhost:{port}"
 
-        mpatch.setenv("AWS_S3_ENDPOINT_URL", s3_endpoint_url)
+        environment["AWS_S3_ENDPOINT_URL"] = s3_endpoint_url
+
+        mpatch = pytest.MonkeyPatch()
+        for key, value in environment.items():
+            mpatch.setenv(key, value)
 
         s3_client = boto3.client("s3", endpoint_url=s3_endpoint_url)
 
