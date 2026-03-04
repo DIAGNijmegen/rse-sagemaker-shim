@@ -49,14 +49,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await auxiliary_data.setup()
         except UserSafeError as error:
-            logger.error(msg=str(error), extra={"internal": False})
+            logger.error(
+                msg=str(error),
+                extra={"internal": False, "inference_result_skipped": True},
+            )
             # If subprocess errors are handled our process should exit cleanly
             raise SystemExit(0) from error
 
         try:
             await USER_PROCESS.setup()
         except UserSafeError as error:
-            logger.error(msg=str(error), extra={"internal": False})
+            logger.error(
+                msg=str(error),
+                extra={"internal": False, "inference_result_skipped": True},
+            )
             # If subprocess errors are handled our process should exit cleanly
             raise SystemExit(0) from error
 

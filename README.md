@@ -43,6 +43,7 @@ These structured logs are JSON objects with the format:
   "source": "stdout" | "stderr",   // The source stream
   "internal": true | false,  // Whether the source of the log is from sagemaker shim or the subprocess
   "task": "" | null,  // The ID of the task
+  "inference_result_skipped": true | false,  // (Optional) Whether output of the inference result has been skipped
 }
 ```
 

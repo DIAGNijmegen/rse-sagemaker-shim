@@ -10,6 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from sagemaker_shim.cli import async_to_sync, cli
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.models import (
     S3Resources,
     get_s3_file_content,
@@ -486,5 +487,40 @@ def test_aux_data_failure(minio, monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert result.stderr.splitlines()[-1] == (
         '{"log": "Could not setup model: Tarfile could not be extracted", '
-        '"level": "ERROR", "source": "stderr", "internal": false, "task": null}'
+        '"level": "ERROR", "source": "stderr", "internal": false, '
+        '"task": null, "inference_result_skipped": true}'
+    )
+
+
+def test_user_process_setup_failure(minio, mocker, monkeypatch, tmp_path):
+    pk = str(uuid4())
+    tasks = [
+        {
+            "pk": pk,
+            "inputs": [],
+            "output_bucket_name": minio.output_bucket_name,
+            "output_prefix": f"tasks/{pk}",
+            "timeout": "PT10S",
+        }
+    ]
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    mocker.patch(
+        "sagemaker_shim.models.UserProcess.setup",
+        side_effect=UserSafeError("failure in user process setup"),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
+
+    assert result.exit_code == 0
+    assert result.stderr.splitlines()[-1] == (
+        '{"log": "failure in user process setup", '
+        '"level": "ERROR", "source": "stderr", "internal": false, '
+        '"task": null, "inference_result_skipped": true}'
     )
