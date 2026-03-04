@@ -302,7 +302,7 @@ def test_home_is_set(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_model_and_ground_truth_extraction(
-    minio, monkeypatch, tmp_path, mocker, algorithm_model
+    local_s3, monkeypatch, tmp_path, mocker, algorithm_model
 ):
     model_pk = str(uuid4())
     ground_truth_pk = str(uuid4())
@@ -325,14 +325,14 @@ async def test_model_and_ground_truth_extraction(
 
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_MODEL",
-        f"s3://{minio.input_bucket_name}/{model_pk}/model.tar.gz",
+        f"s3://{local_s3.input_bucket_name}/{model_pk}/model.tar.gz",
     )
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_MODEL_DEST", str(model_destination)
     )
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH",
-        f"s3://{minio.input_bucket_name}/{ground_truth_pk}/ground_truth.tar.gz",
+        f"s3://{local_s3.input_bucket_name}/{ground_truth_pk}/ground_truth.tar.gz",
     )
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_GROUND_TRUTH_DEST",
@@ -350,12 +350,12 @@ async def test_model_and_ground_truth_extraction(
         async with s3_resources.semaphore:
             await s3_resources.client.upload_fileobj(
                 algorithm_model,
-                minio.input_bucket_name,
+                local_s3.input_bucket_name,
                 f"{model_pk}/model.tar.gz",
             )
             await s3_resources.client.upload_fileobj(
                 ground_truth_f,
-                minio.input_bucket_name,
+                local_s3.input_bucket_name,
                 f"{ground_truth_pk}/ground_truth.tar.gz",
             )
 
@@ -518,7 +518,7 @@ def test_reset_linked_input(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_exec_timeout(minio, monkeypatch, capsys):
+async def test_exec_timeout(local_s3, monkeypatch, capsys):
     cmd = ["sleep", "10"]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
@@ -526,7 +526,7 @@ async def test_exec_timeout(minio, monkeypatch, capsys):
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(seconds=1),
     )
@@ -566,7 +566,7 @@ async def test_exec_timeout(minio, monkeypatch, capsys):
 
 
 @pytest.mark.asyncio
-async def test_non_existent_user(minio, monkeypatch, capsys):
+async def test_non_existent_user(local_s3, monkeypatch, capsys):
     cmd = ["sleep", "10"]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
@@ -574,7 +574,7 @@ async def test_non_existent_user(minio, monkeypatch, capsys):
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(seconds=1),
     )
@@ -608,7 +608,7 @@ async def test_non_existent_user(minio, monkeypatch, capsys):
 
 @pytest.mark.asyncio
 async def test_user_cmd_permission_denied(
-    minio, monkeypatch, capsys, tmp_path
+    local_s3, monkeypatch, capsys, tmp_path
 ):
     test_file = tmp_path / "no_perms.sh"
     test_file.touch()
@@ -620,7 +620,7 @@ async def test_user_cmd_permission_denied(
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(seconds=1),
     )
@@ -654,7 +654,7 @@ async def test_user_cmd_permission_denied(
 
 
 @pytest.mark.asyncio
-async def test_user_cmd_missing(minio, monkeypatch, capsys):
+async def test_user_cmd_missing(local_s3, monkeypatch, capsys):
     cmd = ["doesnt_exist.sh"]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
@@ -662,7 +662,7 @@ async def test_user_cmd_missing(minio, monkeypatch, capsys):
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
         timeout=timedelta(seconds=1),
     )
@@ -1012,7 +1012,7 @@ async def test_teardown_without_setup(monkeypatch, api_method):
 
 
 @pytest.mark.asyncio
-async def test_invoke_call_timeout(minio, monkeypatch, capsys):
+async def test_invoke_call_timeout(local_s3, monkeypatch, capsys):
     async def _sleep(*_, **__):
         await asyncio.sleep(10)
 
@@ -1021,7 +1021,7 @@ async def test_invoke_call_timeout(minio, monkeypatch, capsys):
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=f"tasks/{pk}",
         timeout=timedelta(seconds=1),
     )
@@ -1051,7 +1051,7 @@ async def test_invoke_call_timeout(minio, monkeypatch, capsys):
 
 
 @pytest.mark.asyncio
-async def test_invoke_returns_0_on_201(minio, mocker, monkeypatch):
+async def test_invoke_returns_0_on_201(mocker, monkeypatch):
     mocker.patch(
         "sagemaker_shim.models.httpx.AsyncClient.post",
         return_value=httpx.Response(201),
@@ -1122,7 +1122,7 @@ async def test_invoke_returns_0_on_201(minio, mocker, monkeypatch):
 )
 @pytest.mark.asyncio
 async def test_invoke_raises_on_non_201(
-    minio, mocker, monkeypatch, client_kwargs, expectation
+    mocker, monkeypatch, client_kwargs, expectation
 ):
     mocker.patch(
         "sagemaker_shim.models.httpx.AsyncClient.post",
@@ -1135,7 +1135,7 @@ async def test_invoke_raises_on_non_201(
 
 
 @pytest.mark.asyncio
-async def test_invoke_result_duration(minio, mocker, monkeypatch):
+async def test_invoke_result_duration(local_s3, mocker, monkeypatch):
     mocker.patch(
         "sagemaker_shim.models.httpx.AsyncClient.post",
         return_value=httpx.Response(201),
@@ -1145,7 +1145,7 @@ async def test_invoke_result_duration(minio, mocker, monkeypatch):
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=f"tasks/{pk}",
         timeout=timedelta(seconds=1),
     )
@@ -1172,13 +1172,13 @@ async def test_invoke_result_duration(minio, mocker, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_exec_result_duration(minio, monkeypatch):
+async def test_exec_result_duration(local_s3, monkeypatch):
     process = UserProcess()
     pk = str(uuid4())
     task = InferenceTask(
         pk=pk,
         inputs=[],
-        output_bucket_name=minio.output_bucket_name,
+        output_bucket_name=local_s3.output_bucket_name,
         output_prefix=f"tasks/{pk}",
         timeout=timedelta(seconds=1),
     )

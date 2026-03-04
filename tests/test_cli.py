@@ -56,10 +56,11 @@ def test_invoke_invalid_task_list(task_list):
     assert "The tasks definition is invalid" in result.output
 
 
-def test_invoke_missing_s3_file(minio):
+def test_invoke_missing_s3_file(local_s3):
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["invoke", "-f", f"s3://{minio.output_bucket_name}/missing.json"]
+        cli,
+        ["invoke", "-f", f"s3://{local_s3.output_bucket_name}/missing.json"],
     )
     assert result.exit_code == 2
     assert (
@@ -68,7 +69,7 @@ def test_invoke_missing_s3_file(minio):
     )
 
 
-def test_invoke_bad_bucket(minio):
+def test_invoke_bad_bucket():
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-f", "s3://fasd/missing.json"])
     assert result.exit_code == 2
@@ -95,7 +96,7 @@ def sync_s3_operation(*, method, **kwargs):
     return _run()
 
 
-def test_good_command_inference_from_task_list(minio, monkeypatch):
+def test_good_command_inference_from_task_list(local_s3, monkeypatch):
     cmd = ["echo", "hello"]
     expected_return_code = 0
     pk1, pk2 = str(uuid4()), str(uuid4())
@@ -103,14 +104,14 @@ def test_good_command_inference_from_task_list(minio, monkeypatch):
         {
             "pk": pk1,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk1}",
             "timeout": "PT10S",
         },
         {
             "pk": pk2,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk2}",
             "timeout": "PT10S",
         },
@@ -130,7 +131,7 @@ def test_good_command_inference_from_task_list(minio, monkeypatch):
     for pk in pk1, pk2:
         serialised_invocation = sync_s3_operation(
             method=get_s3_file_content,
-            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk}/.sagemaker_shim/inference_result.json",
+            s3_uri=f"s3://{local_s3.output_bucket_name}/tasks/{pk}/.sagemaker_shim/inference_result.json",
         )
         parsed_result = json.loads(serialised_invocation)
 
@@ -138,7 +139,7 @@ def test_good_command_inference_from_task_list(minio, monkeypatch):
         assert parsed_result["pk"] == pk
 
 
-def test_bad_command_inference_from_task_list(minio, monkeypatch):
+def test_bad_command_inference_from_task_list(local_s3, monkeypatch):
     cmd = ["bash", "-c", "exit 1"]
     expected_return_code = 1
     pk1, pk2 = str(uuid4()), str(uuid4())
@@ -146,14 +147,14 @@ def test_bad_command_inference_from_task_list(minio, monkeypatch):
         {
             "pk": pk1,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk1}",
             "timeout": "PT10S",
         },
         {
             "pk": pk2,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk2}",
             "timeout": "PT10S",
         },
@@ -172,7 +173,7 @@ def test_bad_command_inference_from_task_list(minio, monkeypatch):
 
     serialised_invocation = sync_s3_operation(
         method=get_s3_file_content,
-        s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk1}/.sagemaker_shim/inference_result.json",
+        s3_uri=f"s3://{local_s3.output_bucket_name}/tasks/{pk1}/.sagemaker_shim/inference_result.json",
     )
     parsed_result = json.loads(serialised_invocation)
 
@@ -182,7 +183,7 @@ def test_bad_command_inference_from_task_list(minio, monkeypatch):
     with pytest.raises(botocore.exceptions.ClientError) as error:
         sync_s3_operation(
             method=get_s3_file_content,
-            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk2}/.sagemaker_shim/inference_result.json",
+            s3_uri=f"s3://{local_s3.output_bucket_name}/tasks/{pk2}/.sagemaker_shim/inference_result.json",
         )
 
     assert (
@@ -196,7 +197,7 @@ def test_bad_command_inference_from_task_list(minio, monkeypatch):
     assert result.exit_code == 0
 
 
-def test_good_command_inference_from_s3_uri(minio, monkeypatch):
+def test_good_command_inference_from_s3_uri(local_s3, monkeypatch):
     cmd = ["echo", "hello"]
     expected_return_code = 0
     pk1, pk2 = str(uuid4()), str(uuid4())
@@ -204,14 +205,14 @@ def test_good_command_inference_from_s3_uri(minio, monkeypatch):
         {
             "pk": pk1,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk1}",
             "timeout": "PT10S",
         },
         {
             "pk": pk2,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk2}",
             "timeout": "PT10S",
         },
@@ -230,20 +231,24 @@ def test_good_command_inference_from_s3_uri(minio, monkeypatch):
     sync_s3_operation(
         method=s3_upload_fileobj,
         Fileobj=io.BytesIO(json.dumps(tasks).encode("utf-8")),
-        Bucket=minio.input_bucket_name,
+        Bucket=local_s3.input_bucket_name,
         Key=definition_key,
     )
 
     runner = CliRunner()
     runner.invoke(
         cli,
-        ["invoke", "-f", f"s3://{minio.input_bucket_name}/{definition_key}"],
+        [
+            "invoke",
+            "-f",
+            f"s3://{local_s3.input_bucket_name}/{definition_key}",
+        ],
     )
 
     for pk in pk1, pk2:
         serialised_invocation = sync_s3_operation(
             method=get_s3_file_content,
-            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk}/.sagemaker_shim/inference_result.json",
+            s3_uri=f"s3://{local_s3.output_bucket_name}/tasks/{pk}/.sagemaker_shim/inference_result.json",
         )
         parsed_result = json.loads(serialised_invocation)
 
@@ -251,7 +256,7 @@ def test_good_command_inference_from_s3_uri(minio, monkeypatch):
         assert parsed_result["pk"] == pk
 
 
-def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
+def test_bad_command_inference_from_s3_uri(local_s3, monkeypatch):
     cmd = ["bash", "-c", "exit 1"]
     expected_return_code = 1
     pk1, pk2 = str(uuid4()), str(uuid4())
@@ -259,14 +264,14 @@ def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
         {
             "pk": pk1,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk1}",
             "timeout": "PT10S",
         },
         {
             "pk": pk2,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk2}",
             "timeout": "PT10S",
         },
@@ -285,19 +290,23 @@ def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
     sync_s3_operation(
         method=s3_upload_fileobj,
         Fileobj=io.BytesIO(json.dumps(tasks).encode("utf-8")),
-        Bucket=minio.input_bucket_name,
+        Bucket=local_s3.input_bucket_name,
         Key=definition_key,
     )
 
     runner = CliRunner()
     result = runner.invoke(
         cli,
-        ["invoke", "-f", f"s3://{minio.input_bucket_name}/{definition_key}"],
+        [
+            "invoke",
+            "-f",
+            f"s3://{local_s3.input_bucket_name}/{definition_key}",
+        ],
     )
 
     serialised_invocation = sync_s3_operation(
         method=get_s3_file_content,
-        s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk1}/.sagemaker_shim/inference_result.json",
+        s3_uri=f"s3://{local_s3.output_bucket_name}/tasks/{pk1}/.sagemaker_shim/inference_result.json",
     )
     parsed_result = json.loads(serialised_invocation)
 
@@ -307,7 +316,7 @@ def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
     with pytest.raises(botocore.exceptions.ClientError) as error:
         sync_s3_operation(
             method=get_s3_file_content,
-            s3_uri=f"s3://{minio.output_bucket_name}/tasks/{pk2}/.sagemaker_shim/inference_result.json",
+            s3_uri=f"s3://{local_s3.output_bucket_name}/tasks/{pk2}/.sagemaker_shim/inference_result.json",
         )
 
     assert (
@@ -321,13 +330,13 @@ def test_bad_command_inference_from_s3_uri(minio, monkeypatch):
     assert result.exit_code == 0
 
 
-def test_logging_setup(minio, monkeypatch):
+def test_logging_setup(local_s3, monkeypatch):
     pk = str(uuid4())
     tasks = [
         {
             "pk": pk,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk}",
             "timeout": "PT10S",
         }
@@ -352,13 +361,13 @@ def test_logging_setup(minio, monkeypatch):
     assert "Cleaning up Auxiliary Data" in result.output
 
 
-def test_logging_stderr_setup(minio, monkeypatch):
+def test_logging_stderr_setup(local_s3, monkeypatch):
     pk = str(uuid4())
     tasks = [
         {
             "pk": pk,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk}",
             "timeout": "PT10S",
         }
@@ -383,13 +392,13 @@ def test_logging_stderr_setup(minio, monkeypatch):
     ) in result.output
 
 
-def test_memory_limit_undefined(minio, monkeypatch):
+def test_memory_limit_undefined(local_s3, monkeypatch):
     pk = str(uuid4())
     tasks = [
         {
             "pk": pk,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk}",
         }
     ]
@@ -409,13 +418,13 @@ def test_memory_limit_undefined(minio, monkeypatch):
     ) in result.output
 
 
-def test_memory_limit_defined(minio, monkeypatch):
+def test_memory_limit_defined(local_s3, monkeypatch):
     pk = str(uuid4())
     tasks = [
         {
             "pk": pk,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk}",
         }
     ]
@@ -443,7 +452,7 @@ def test_memory_limit_defined(minio, monkeypatch):
     ) in result.output
 
 
-def test_aux_data_failure(minio, monkeypatch, tmp_path):
+def test_aux_data_failure(local_s3, monkeypatch, tmp_path):
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     model_key = f"{prefix}/sub/dodgy.tar"
@@ -452,7 +461,7 @@ def test_aux_data_failure(minio, monkeypatch, tmp_path):
         {
             "pk": pk,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": prefix,
             "timeout": "PT10S",
         }
@@ -467,7 +476,7 @@ def test_aux_data_failure(minio, monkeypatch, tmp_path):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_MODEL",
-        f"s3://{minio.input_bucket_name}/{model_key}",
+        f"s3://{local_s3.input_bucket_name}/{model_key}",
     )
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_MODEL_DEST", str(model_destination)
@@ -476,7 +485,7 @@ def test_aux_data_failure(minio, monkeypatch, tmp_path):
     sync_s3_operation(
         method=s3_upload_fileobj,
         Fileobj=io.BytesIO(os.urandom(8)),
-        Bucket=minio.input_bucket_name,
+        Bucket=local_s3.input_bucket_name,
         Key=model_key,
     )
 

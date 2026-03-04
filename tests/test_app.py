@@ -29,7 +29,7 @@ def test_container_responds_to_execution_parameters(client):
     }
 
 
-def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
+def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, local_s3):
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
     # /invocations endpoint.
@@ -48,7 +48,7 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, minio):
     data = {
         "pk": pk,
         "inputs": [],
-        "output_bucket_name": minio.output_bucket_name,
+        "output_bucket_name": local_s3.output_bucket_name,
         "output_prefix": f"test/{pk}",
         "timeout": "PT10S",
     }
