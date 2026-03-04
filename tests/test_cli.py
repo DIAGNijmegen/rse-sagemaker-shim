@@ -501,13 +501,13 @@ def test_aux_data_failure(local_s3, monkeypatch, tmp_path):
     )
 
 
-def test_user_process_setup_failure(minio, mocker, monkeypatch, tmp_path):
+def test_user_process_setup_failure(local_s3, mocker, monkeypatch, tmp_path):
     pk = str(uuid4())
     tasks = [
         {
             "pk": pk,
             "inputs": [],
-            "output_bucket_name": minio.output_bucket_name,
+            "output_bucket_name": local_s3.output_bucket_name,
             "output_prefix": f"tasks/{pk}",
             "timeout": "PT10S",
         }
