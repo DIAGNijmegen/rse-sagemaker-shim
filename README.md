@@ -42,8 +42,8 @@ These structured logs are JSON objects with the format:
   "level": "CRITICAL" | "ERROR" | "WARNING" | "INFO" | "DEBUG" | "NOTSET",  // The severity level of the log
   "source": "stdout" | "stderr",   // The source stream
   "internal": true | false,  // Whether the source of the log is from sagemaker shim or the subprocess
-  "inference_result_skipped": true | false,  // Whether output of the inference result has been skipped
   "task": "" | null,  // The ID of the task
+  "inference_result_skipped": true | false,  // (Optional) Whether output of the inference result has been skipped
 }
 ```
 

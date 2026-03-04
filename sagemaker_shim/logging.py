@@ -28,10 +28,12 @@ class JSONFormatter(logging.Formatter):
             source = "stderr"
 
         internal = getattr(record, "internal", True)
-        inference_result_skipped = getattr(
-            record, "inference_result_skipped", False
-        )
         task_pk = getattr(record, "task_pk", None)
+        extra_kwargs = {}
+        if hasattr(record, "inference_result_skipped"):
+            extra_kwargs["inference_result_skipped"] = (
+                record.inference_result_skipped
+            )
 
         return "\n".join(
             json.dumps(
@@ -40,8 +42,8 @@ class JSONFormatter(logging.Formatter):
                     "level": record.levelname,
                     "source": source,
                     "internal": internal,
-                    "inference_result_skipped": inference_result_skipped,
                     "task": task_pk,
+                    **extra_kwargs,
                 }
             )
             for m in message.splitlines()
