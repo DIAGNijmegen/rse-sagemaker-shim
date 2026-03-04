@@ -553,17 +553,15 @@ async def test_exec_timeout(minio, monkeypatch, capsys):
     # "Time limit exceeded" must be the last log for the user error
     assert captured.err == (
         '{"log": "Time limit exceeded", "level": "ERROR", "source": "stderr", '
-        f'"internal": false, "inference_result_skipped": false, "task": "{pk}"}}\n'
+        f'"internal": false, "task": "{pk}"}}\n'
     )
     assert (
         '{"log": "Execution was cancelled", "level": "INFO", "source": "stdout", '
-        '"internal": true, "inference_result_skipped": false, "task": null}'
-        in captured.out
+        '"internal": true, "task": null}' in captured.out
     )
     assert (
         '{"log": "Process group terminated", "level": "INFO", "source": "stdout", '
-        '"internal": true, "inference_result_skipped": false, "task": null}'
-        in captured.out
+        '"internal": true, "task": null}' in captured.out
     )
 
 
@@ -604,8 +602,7 @@ async def test_non_existent_user(minio, monkeypatch, capsys):
     # Invalid argument must be the last log for the user error
     assert captured.err == (
         '{"log": "Invalid argument for the containers USER instruction", '
-        f'"level": "ERROR", "source": "stderr", "internal": false, '
-        f'"inference_result_skipped": false, "task": "{pk}"}}\n'
+        f'"level": "ERROR", "source": "stderr", "internal": false, "task": "{pk}"}}\n'
     )
 
 
@@ -652,8 +649,7 @@ async def test_user_cmd_permission_denied(
         '{"log": "The user defined in the containers USER instruction '
         "does not have permission to execute the command defined by "
         'the containers ENTRYPOINT and CMD instructions", "level": "ERROR", '
-        f'"source": "stderr", "internal": false, '
-        f'"inference_result_skipped": false, "task": "{pk}"}}\n'
+        f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
     )
 
 
@@ -694,8 +690,7 @@ async def test_user_cmd_missing(minio, monkeypatch, capsys):
     assert captured.err == (
         '{"log": "The command defined by the containers ENTRYPOINT '
         'and CMD instructions does not exist", "level": "ERROR", '
-        f'"source": "stderr", "internal": false, '
-        f'"inference_result_skipped": false, "task": "{pk}"}}\n'
+        f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
     )
 
 
@@ -1051,7 +1046,7 @@ async def test_invoke_call_timeout(minio, monkeypatch, capsys):
     # "Time limit exceeded" must be the last log for the user error
     assert captured.err == (
         '{"log": "Time limit exceeded", "level": "ERROR", "source": "stderr", '
-        f'"internal": false, "inference_result_skipped": false, "task": "{pk}"}}\n'
+        f'"internal": false, "task": "{pk}"}}\n'
     )
 
 

@@ -211,8 +211,7 @@ async def test_invoke_with_dodgy_file(
     captured = capsys.readouterr()
     assert captured.err == (
         '{"log": "Zip file contains invalid paths", "level": "ERROR", '
-        f'"source": "stderr", "internal": false, '
-        f'"inference_result_skipped": false, "task": "{pk}"}}\n'
+        f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
     )
 
 
@@ -280,8 +279,7 @@ async def test_invoke_with_non_zip(
     captured = capsys.readouterr()
     assert captured.err == (
         '{"log": "Input zip file could not be extracted", "level": "ERROR", '
-        f'"source": "stderr", "internal": false, '
-        f'"inference_result_skipped": false, "task": "{pk}"}}\n'
+        f'"source": "stderr", "internal": false, "task": "{pk}"}}\n'
     )
 
 
