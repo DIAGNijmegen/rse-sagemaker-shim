@@ -50,12 +50,12 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Build the package
-        run: uv build
+        run: uv build --out-dir python-dist/
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v4
         with:
           name: python-dist
-          path: dist/
+          path: python-dist/
           if-no-files-found: error
           retention-days: 1
 
