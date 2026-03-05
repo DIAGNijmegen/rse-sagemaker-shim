@@ -495,7 +495,7 @@ def test_aux_data_failure(local_s3, monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert result.stderr.splitlines()[-1] == (
-        '{"log": "Could not setup model: Tarfile could not be extracted", '
+        '{"log": "Could not set up model: Tarfile could not be extracted", '
         '"level": "ERROR", "source": "stderr", "internal": false, '
         '"task": null, "inference_result_skipped": true}'
     )
