@@ -70,7 +70,7 @@ def test_invoke_missing_s3_file(local_s3):
     )
 
 
-def test_invoke_bad_bucket():
+def test_invoke_bad_bucket(local_s3):
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-f", "s3://fasd/missing.json"])
     assert result.exit_code == 2
