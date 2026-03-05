@@ -899,7 +899,9 @@ async def test_invoke_start_and_health_timeout(monkeypatch, capsys):
     p = UserProcess()
 
     with pytest.raises(
-        UserSafeError, match="Health check time limit exceeded"
+        UserSafeError,
+        match="The algorithm container's inference server didn’t pass "
+        "the health check",
     ):
         await p.setup()
 
@@ -944,7 +946,9 @@ async def test_invoke_start_and_health_call_timeout_sleep(
     p = UserProcess()
 
     with pytest.raises(
-        UserSafeError, match="Health check time limit exceeded"
+        UserSafeError,
+        match="The algorithm container's inference server didn’t pass "
+        "the health check",
     ):
         await p.setup()
 

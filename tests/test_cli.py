@@ -70,7 +70,10 @@ def test_invoke_missing_s3_file(local_s3):
     )
 
 
-def test_invoke_bad_bucket():
+def test_invoke_bad_bucket(local_s3):
+    # The local_s3 fixture is required as the test would
+    # otherwise fail if it runs before any other test with the
+    # local_s3 fixture
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-f", "s3://fasd/missing.json"])
     assert result.exit_code == 2
@@ -495,7 +498,7 @@ def test_aux_data_failure(local_s3, monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert result.stderr.splitlines()[-1] == (
-        '{"log": "Could not setup model: Tarfile could not be extracted", '
+        '{"log": "Could not set up model: Tarfile could not be extracted", '
         '"level": "ERROR", "source": "stderr", "internal": false, '
         '"task": null, "inference_result_skipped": true}'
     )
