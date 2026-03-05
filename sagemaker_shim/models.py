@@ -396,13 +396,13 @@ class AuxiliaryData:
         try:
             await self.download_model()
         except UserSafeError as error:
-            raise UserSafeError(f"Could not setup model: {error}") from error
+            raise UserSafeError(f"Could not set up model: {error}") from error
 
         try:
             await self.download_ground_truth()
         except UserSafeError as error:
             raise UserSafeError(
-                f"Could not setup ground truth: {error}"
+                f"Could not set up ground truth: {error}"
             ) from error
 
     async def teardown(self) -> None:
