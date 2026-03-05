@@ -731,7 +731,14 @@ class UserProcess(ProcUserMixin):
             except TimeoutError as error:
                 await self.teardown()
                 raise UserSafeError(
-                    "Health check time limit exceeded"
+                    f"The algorithm container's inference server didn’t pass "
+                    f"the health check within "
+                    f"{self.start_and_health_timeout.total_seconds():.0f} "
+                    f"seconds or the /health endpoint took to long to respond ("
+                    f"{self.health_check_call_timeout.total_seconds():.0f} "
+                    f"seconds per call). "
+                    f"Verify that the container starts correctly "
+                    f"and that /health responds quickly."
                 ) from error
             except UserSafeError as error:
                 await self.teardown()
