@@ -71,6 +71,9 @@ def test_invoke_missing_s3_file(local_s3):
 
 
 def test_invoke_bad_bucket(local_s3):
+    # The local_s3 fixture is required as the test would
+    # otherwise fail if it runs before any other test with the
+    # local_s3 fixture
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-f", "s3://fasd/missing.json"])
     assert result.exit_code == 2
