@@ -1117,8 +1117,11 @@ class InferenceTask(BaseModel):
                     invoke_duration=None,
                 )
 
-            await self.upload_inference_result(
-                inference_result=inference_result, s3_resources=s3_resources
+            await asyncio.shield(
+                self.upload_inference_result(
+                    inference_result=inference_result,
+                    s3_resources=s3_resources,
+                )
             )
         finally:
             lock.release()
