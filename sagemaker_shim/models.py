@@ -530,6 +530,7 @@ class InferenceResult(BaseModel):
 
     pk: str
     return_code: int
+    error_message: str = ""
     exec_duration: timedelta | None
     invoke_duration: timedelta | None
     outputs: list[InferenceIO]
@@ -1119,6 +1120,7 @@ class InferenceTask(BaseModel):
                 inference_result = InferenceResult(
                     pk=self.pk,
                     return_code=1,
+                    error_message=str(exception_group.exceptions[-1]),
                     outputs=[],
                     exec_duration=None,
                     invoke_duration=None,
@@ -1147,15 +1149,17 @@ class InferenceTask(BaseModel):
 
             start = time.monotonic()
 
+            error_message = ""
             try:
                 return_code = await asyncio.wait_for(
                     user_process.run_inference(task=self),
                     timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
+                error_message = "Time limit exceeded"
                 log_external(
                     level=logging.ERROR,
-                    msg="Time limit exceeded",
+                    msg=error_message,
                     task_pk=self.pk,
                 )
                 return_code = 1
@@ -1168,10 +1172,13 @@ class InferenceTask(BaseModel):
                 outputs = await self.upload_output(s3_resources=s3_resources)
             else:
                 outputs = set()
+                if not error_message:
+                    error_message = "Process returned non-zero exit code"
 
             return InferenceResult(
                 pk=self.pk,
                 return_code=return_code,
+                error_message=error_message,
                 outputs=outputs,
                 exec_duration=(
                     timedelta(seconds=duration)

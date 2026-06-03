@@ -141,6 +141,7 @@ def test_good_command_inference_from_task_list(local_s3, monkeypatch):
 
         assert parsed_result["return_code"] == expected_return_code
         assert parsed_result["pk"] == pk
+        assert parsed_result["error_message"] == ""
 
 
 def test_bad_command_inference_from_task_list(local_s3, monkeypatch):
@@ -183,6 +184,9 @@ def test_bad_command_inference_from_task_list(local_s3, monkeypatch):
 
     assert parsed_result["return_code"] == expected_return_code
     assert parsed_result["pk"] == pk1
+    assert (
+        parsed_result["error_message"] == "Process returned non-zero exit code"
+    )
 
     with pytest.raises(botocore.exceptions.ClientError) as error:
         sync_s3_operation(
@@ -258,6 +262,7 @@ def test_good_command_inference_from_s3_uri(local_s3, monkeypatch):
 
         assert parsed_result["return_code"] == expected_return_code
         assert parsed_result["pk"] == pk
+        assert parsed_result["error_message"] == ""
 
 
 def test_bad_command_inference_from_s3_uri(local_s3, monkeypatch):
@@ -316,6 +321,9 @@ def test_bad_command_inference_from_s3_uri(local_s3, monkeypatch):
 
     assert parsed_result["return_code"] == expected_return_code
     assert parsed_result["pk"] == pk1
+    assert (
+        parsed_result["error_message"] == "Process returned non-zero exit code"
+    )
 
     with pytest.raises(botocore.exceptions.ClientError) as error:
         sync_s3_operation(
