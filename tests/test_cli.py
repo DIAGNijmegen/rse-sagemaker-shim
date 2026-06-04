@@ -507,8 +507,7 @@ def test_aux_data_failure(local_s3, monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert result.stderr.splitlines()[-1] == (
         '{"log": "Could not set up model: Tarfile could not be extracted", '
-        '"level": "ERROR", "source": "stderr", "internal": false, '
-        '"task": null, "inference_result_skipped": true}'
+        '"level": "ERROR", "source": "stderr", "internal": false, "task": null}'
     )
 
 
@@ -541,6 +540,5 @@ def test_user_process_setup_failure(local_s3, mocker, monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert result.stderr.splitlines()[-1] == (
         '{"log": "failure in user process setup", '
-        '"level": "ERROR", "source": "stderr", "internal": false, '
-        '"task": null, "inference_result_skipped": true}'
+        '"level": "ERROR", "source": "stderr", "internal": false, "task": null}'
     )
