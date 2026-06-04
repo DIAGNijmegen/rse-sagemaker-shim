@@ -19,10 +19,12 @@ from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceTaskList,
+    RuntimeSetupResult,
     S3Resources,
     UserProcess,
     get_s3_file_content,
     get_s3_resources,
+    upload_runtime_setup_result,
 )
 
 logger = logging.getLogger(__name__)
@@ -96,6 +98,15 @@ async def invoke(tasks: str, file: str) -> None:
                 await auxiliary_data.setup()
             except UserSafeError as error:
                 logger.error(msg=str(error), extra={"internal": False})
+                await asyncio.shield(
+                    upload_runtime_setup_result(
+                        runtime_setup_result=RuntimeSetupResult(
+                            return_code=1,
+                            error_message=str(error),
+                        ),
+                        s3_resources=s3_resources,
+                    )
+                )
                 # If subprocess errors are handled our process should exit cleanly
                 raise SystemExit(0) from error
 
@@ -103,8 +114,24 @@ async def invoke(tasks: str, file: str) -> None:
                 await user_process.setup()
             except UserSafeError as error:
                 logger.error(msg=str(error), extra={"internal": False})
+                await asyncio.shield(
+                    upload_runtime_setup_result(
+                        runtime_setup_result=RuntimeSetupResult(
+                            return_code=1,
+                            error_message=str(error),
+                        ),
+                        s3_resources=s3_resources,
+                    )
+                )
                 # If subprocess errors are handled our process should exit cleanly
                 raise SystemExit(0) from error
+
+            await asyncio.shield(
+                upload_runtime_setup_result(
+                    runtime_setup_result=RuntimeSetupResult(return_code=0),
+                    s3_resources=s3_resources,
+                )
+            )
 
             for task in parsed_tasks.root:
                 # Only run one task at a time

@@ -243,6 +243,50 @@ def parse_s3_uri(*, s3_uri: str) -> S3File:
     return S3File(bucket=match.group("bucket"), key=match.group("key"))
 
 
+class RuntimeSetupResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    return_code: int
+    error_message: str = ""
+    sagemaker_shim_version: str = version("sagemaker-shim")
+
+
+async def upload_runtime_setup_result(
+    *, runtime_setup_result: RuntimeSetupResult, s3_resources: S3Resources
+) -> None:
+    content = runtime_setup_result.model_dump_json().encode("utf-8")
+    signature = hmac.new(
+        key=bytes.fromhex(
+            os.environ.get("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", "")
+        ),
+        msg=content,
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+    output_bucket_name = os.environ.get(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME", ""
+    )
+    output_prefix = os.environ.get(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", ""
+    )
+    bucket_key = f"{output_prefix}.sagemaker_shim/runtime_setup_result.json"
+
+    logger.info(
+        f"Uploading {bucket_key=} in "
+        f"{output_bucket_name=} with {runtime_setup_result=}"
+    )
+
+    async with s3_resources.semaphore:
+        await s3_resources.client.upload_fileobj(
+            Fileobj=io.BytesIO(content),
+            Bucket=output_bucket_name,
+            Key=bucket_key,
+            ExtraArgs={
+                "Metadata": {"signature_hmac_sha256": signature},
+            },
+        )
+
+
 async def get_s3_file_content(
     *, s3_uri: str, s3_resources: S3Resources
 ) -> bytes:

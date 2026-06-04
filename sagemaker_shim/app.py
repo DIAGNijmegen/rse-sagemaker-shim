@@ -17,6 +17,7 @@ Notes:
   - /opt/ml/model will contain the model weights, this can be an empty .tar.gz file
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,8 +29,10 @@ from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceResult,
     InferenceTask,
+    RuntimeSetupResult,
     UserProcess,
     get_s3_resources,
+    upload_runtime_setup_result,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +53,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await auxiliary_data.setup()
         except UserSafeError as error:
             logger.error(msg=str(error), extra={"internal": False})
+            await asyncio.shield(
+                upload_runtime_setup_result(
+                    runtime_setup_result=RuntimeSetupResult(
+                        return_code=1,
+                        error_message=str(error),
+                    ),
+                    s3_resources=s3_resources,
+                )
+            )
             # If subprocess errors are handled our process should exit cleanly
             raise SystemExit(0) from error
 
@@ -57,8 +69,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await USER_PROCESS.setup()
         except UserSafeError as error:
             logger.error(msg=str(error), extra={"internal": False})
+            await asyncio.shield(
+                upload_runtime_setup_result(
+                    runtime_setup_result=RuntimeSetupResult(
+                        return_code=1,
+                        error_message=str(error),
+                    ),
+                    s3_resources=s3_resources,
+                )
+            )
             # If subprocess errors are handled our process should exit cleanly
             raise SystemExit(0) from error
+
+        await asyncio.shield(
+            upload_runtime_setup_result(
+                runtime_setup_result=RuntimeSetupResult(return_code=0),
+                s3_resources=s3_resources,
+            )
+        )
 
         try:
             yield

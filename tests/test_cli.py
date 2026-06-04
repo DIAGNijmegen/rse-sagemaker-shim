@@ -128,6 +128,14 @@ def test_good_command_inference_from_task_list(local_s3, monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
+        local_s3.output_bucket_name,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX",
+        f"runtime/{uuid4()}/",
+    )
 
     runner = CliRunner()
     runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
@@ -172,6 +180,14 @@ def test_bad_command_inference_from_task_list(local_s3, monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
+        local_s3.output_bucket_name,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX",
+        f"runtime/{uuid4()}/",
+    )
 
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
@@ -233,6 +249,14 @@ def test_good_command_inference_from_s3_uri(local_s3, monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
+        local_s3.output_bucket_name,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX",
+        f"runtime/{uuid4()}/",
+    )
 
     definition_key = f"{uuid4()}/invocations.json"
 
@@ -293,6 +317,13 @@ def test_bad_command_inference_from_s3_uri(local_s3, monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
+        local_s3.output_bucket_name,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", f"runtime/{pk1}/"
+    )
 
     definition_key = f"{uuid4()}/invocations.json"
 
@@ -361,6 +392,14 @@ def test_logging_setup(local_s3, monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
+        local_s3.output_bucket_name,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX",
+        f"runtime/{uuid4()}/",
+    )
 
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
@@ -394,6 +433,14 @@ def test_logging_stderr_setup(local_s3, monkeypatch):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
+        local_s3.output_bucket_name,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX",
+        f"runtime/{uuid4()}/",
+    )
 
     runner = CliRunner()
     result = runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
@@ -487,6 +534,13 @@ def test_aux_data_failure(local_s3, monkeypatch, tmp_path):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
     monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
+        local_s3.output_bucket_name,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", f"runtime/{pk}/"
+    )
+    monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_MODEL",
         f"s3://{local_s3.input_bucket_name}/{model_key}",
     )
@@ -510,6 +564,18 @@ def test_aux_data_failure(local_s3, monkeypatch, tmp_path):
         '"level": "ERROR", "source": "stderr", "internal": false, "task": null}'
     )
 
+    serialised_invocation = sync_s3_operation(
+        method=get_s3_file_content,
+        s3_uri=f"s3://{local_s3.output_bucket_name}/runtime/{pk}/.sagemaker_shim/runtime_setup_result.json",
+    )
+    parsed_result = json.loads(serialised_invocation)
+
+    assert parsed_result["return_code"] == 1
+    assert (
+        parsed_result["error_message"]
+        == "Could not set up model: Tarfile could not be extracted"
+    )
+
 
 def test_user_process_setup_failure(local_s3, mocker, monkeypatch, tmp_path):
     pk = str(uuid4())
@@ -529,6 +595,13 @@ def test_user_process_setup_failure(local_s3, mocker, monkeypatch, tmp_path):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
+        local_s3.output_bucket_name,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", f"runtime/{pk}/"
+    )
     mocker.patch(
         "sagemaker_shim.models.UserProcess.setup",
         side_effect=UserSafeError("failure in user process setup"),
@@ -542,3 +615,52 @@ def test_user_process_setup_failure(local_s3, mocker, monkeypatch, tmp_path):
         '{"log": "failure in user process setup", '
         '"level": "ERROR", "source": "stderr", "internal": false, "task": null}'
     )
+
+    serialised_invocation = sync_s3_operation(
+        method=get_s3_file_content,
+        s3_uri=f"s3://{local_s3.output_bucket_name}/runtime/{pk}/.sagemaker_shim/runtime_setup_result.json",
+    )
+    parsed_result = json.loads(serialised_invocation)
+
+    assert parsed_result["return_code"] == 1
+    assert parsed_result["error_message"] == "failure in user process setup"
+
+
+def test_runtime_setup_result_written(local_s3, monkeypatch):
+    pk = str(uuid4())
+    tasks = [
+        {
+            "pk": pk,
+            "inputs": [],
+            "output_bucket_name": local_s3.output_bucket_name,
+            "output_prefix": f"tasks/{pk}",
+            "timeout": "PT10S",
+        }
+    ]
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_WRITABLE_DIRECTORIES", "")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
+        local_s3.output_bucket_name,
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", f"runtime/{pk}/"
+    )
+
+    runner = CliRunner()
+    runner.invoke(cli, ["invoke", "-t", json.dumps(tasks)])
+
+    serialised_invocation = sync_s3_operation(
+        method=get_s3_file_content,
+        s3_uri=f"s3://{local_s3.output_bucket_name}/runtime/{pk}/.sagemaker_shim/runtime_setup_result.json",
+    )
+    parsed_result = json.loads(serialised_invocation)
+
+    assert parsed_result["return_code"] == 0
+    assert parsed_result["error_message"] == ""
