@@ -24,7 +24,6 @@ from sagemaker_shim.models import (
     UserProcess,
     get_s3_file_content,
     get_s3_resources,
-    upload_runtime_setup_result,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,14 +97,11 @@ async def invoke(tasks: str, file: str) -> None:
                 await auxiliary_data.setup()
             except UserSafeError as error:
                 logger.error(msg=str(error), extra={"internal": False})
+                runtime_setup_result = RuntimeSetupResult(
+                    return_code=1, error_message=str(error)
+                )
                 await asyncio.shield(
-                    upload_runtime_setup_result(
-                        runtime_setup_result=RuntimeSetupResult(
-                            return_code=1,
-                            error_message=str(error),
-                        ),
-                        s3_resources=s3_resources,
-                    )
+                    runtime_setup_result.upload(s3_resources=s3_resources)
                 )
                 # If subprocess errors are handled our process should exit cleanly
                 raise SystemExit(0) from error
@@ -114,23 +110,18 @@ async def invoke(tasks: str, file: str) -> None:
                 await user_process.setup()
             except UserSafeError as error:
                 logger.error(msg=str(error), extra={"internal": False})
+                runtime_setup_result = RuntimeSetupResult(
+                    return_code=1, error_message=str(error)
+                )
                 await asyncio.shield(
-                    upload_runtime_setup_result(
-                        runtime_setup_result=RuntimeSetupResult(
-                            return_code=1,
-                            error_message=str(error),
-                        ),
-                        s3_resources=s3_resources,
-                    )
+                    runtime_setup_result.upload(s3_resources=s3_resources)
                 )
                 # If subprocess errors are handled our process should exit cleanly
                 raise SystemExit(0) from error
 
+            runtime_setup_result = RuntimeSetupResult(return_code=0)
             await asyncio.shield(
-                upload_runtime_setup_result(
-                    runtime_setup_result=RuntimeSetupResult(return_code=0),
-                    s3_resources=s3_resources,
-                )
+                runtime_setup_result.upload(s3_resources=s3_resources)
             )
 
             for task in parsed_tasks.root:
