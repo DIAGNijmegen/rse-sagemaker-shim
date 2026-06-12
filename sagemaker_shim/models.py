@@ -263,12 +263,12 @@ async def upload_runtime_setup_result(
         digestmod=hashlib.sha256,
     ).hexdigest()
 
-    output_bucket_name = os.environ.get(
-        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME", ""
-    )
-    output_prefix = os.environ.get(
-        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", ""
-    )
+    output_bucket_name = os.environ[
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME"
+    ]
+    output_prefix = os.environ[
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX"
+    ]
 
     if output_prefix[-1] != "/":
         output_prefix += "/"
