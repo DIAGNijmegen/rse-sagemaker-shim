@@ -775,7 +775,6 @@ dependencies = [
     { name = "botocore" },
     { name = "click" },
     { name = "fastapi" },
-    { name = "setuptools" },
     { name = "uvicorn" },
 ]
 
@@ -791,6 +790,7 @@ dev = [
     { name = "pytest-mock" },
     { name = "pytest-randomly" },
     { name = "pytest-xdist" },
+    { name = "setuptools" },
     { name = "staticx", marker = "sys_platform == 'linux'" },
     { name = "types-aioboto3", extra = ["s3"] },
     { name = "types-aiofiles" },
@@ -802,7 +802,6 @@ requires-dist = [
     { name = "botocore" },
     { name = "click" },
     { name = "fastapi", specifier = "!=0.89.0" },
-    { name = "setuptools", specifier = "<81" },
     { name = "uvicorn" },
 ]
 
@@ -818,6 +817,7 @@ dev = [
     { name = "pytest-mock" },
     { name = "pytest-randomly" },
     { name = "pytest-xdist" },
+    { name = "setuptools", specifier = "<81" },
     { name = "staticx", marker = "sys_platform == 'linux'" },
     { name = "types-aioboto3", extras = ["s3"] },
     { name = "types-aiofiles" },
