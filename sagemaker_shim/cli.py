@@ -98,7 +98,7 @@ async def invoke(tasks: str, file: str) -> None:
             except UserSafeError as error:
                 logger.error(msg=str(error), extra={"internal": False})
                 runtime_setup_result = RuntimeSetupResult(
-                    return_code=1, error_message=str(error)
+                    return_code=1, user_safe_error_message=str(error)
                 )
                 await asyncio.shield(
                     runtime_setup_result.upload(s3_resources=s3_resources)
@@ -111,7 +111,7 @@ async def invoke(tasks: str, file: str) -> None:
             except UserSafeError as error:
                 logger.error(msg=str(error), extra={"internal": False})
                 runtime_setup_result = RuntimeSetupResult(
-                    return_code=1, error_message=str(error)
+                    return_code=1, user_safe_error_message=str(error)
                 )
                 await asyncio.shield(
                     runtime_setup_result.upload(s3_resources=s3_resources)

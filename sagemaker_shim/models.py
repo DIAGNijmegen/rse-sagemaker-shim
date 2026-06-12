@@ -247,7 +247,7 @@ class RuntimeSetupResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     return_code: int
-    error_message: str = ""
+    user_safe_error_message: str = ""
     sagemaker_shim_version: str = version("sagemaker-shim")
 
     async def upload(self, *, s3_resources: S3Resources) -> None:
@@ -576,7 +576,7 @@ class InferenceResult(BaseModel):
 
     pk: str
     return_code: int
-    error_message: str = ""
+    user_safe_error_message: str = ""
     exec_duration: timedelta | None
     invoke_duration: timedelta | None
     outputs: list[InferenceIO]
@@ -1166,7 +1166,7 @@ class InferenceTask(BaseModel):
                 inference_result = InferenceResult(
                     pk=self.pk,
                     return_code=1,
-                    error_message=str(exception_group),
+                    user_safe_error_message=str(exception_group),
                     outputs=[],
                     exec_duration=None,
                     invoke_duration=None,
@@ -1195,17 +1195,17 @@ class InferenceTask(BaseModel):
 
             start = time.monotonic()
 
-            error_message = ""
+            user_safe_error_message = ""
             try:
                 return_code = await asyncio.wait_for(
                     user_process.run_inference(task=self),
                     timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
-                error_message = "Time limit exceeded"
+                user_safe_error_message = "Time limit exceeded"
                 log_external(
                     level=logging.ERROR,
-                    msg=error_message,
+                    msg=user_safe_error_message,
                     task_pk=self.pk,
                 )
                 return_code = 1
@@ -1222,7 +1222,7 @@ class InferenceTask(BaseModel):
             return InferenceResult(
                 pk=self.pk,
                 return_code=return_code,
-                error_message=error_message,
+                user_safe_error_message=user_safe_error_message,
                 outputs=outputs,
                 exec_duration=(
                     timedelta(seconds=duration)

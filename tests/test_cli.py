@@ -149,7 +149,7 @@ def test_good_command_inference_from_task_list(local_s3, monkeypatch):
 
         assert parsed_result["return_code"] == expected_return_code
         assert parsed_result["pk"] == pk
-        assert parsed_result["error_message"] == ""
+        assert parsed_result["user_safe_error_message"] == ""
 
 
 def test_bad_command_inference_from_task_list(local_s3, monkeypatch):
@@ -283,7 +283,7 @@ def test_good_command_inference_from_s3_uri(local_s3, monkeypatch):
 
         assert parsed_result["return_code"] == expected_return_code
         assert parsed_result["pk"] == pk
-        assert parsed_result["error_message"] == ""
+        assert parsed_result["user_safe_error_message"] == ""
 
 
 def test_bad_command_inference_from_s3_uri(local_s3, monkeypatch):
@@ -566,7 +566,7 @@ def test_aux_data_failure(local_s3, monkeypatch, tmp_path):
 
     assert parsed_result["return_code"] == 1
     assert (
-        parsed_result["error_message"]
+        parsed_result["user_safe_error_message"]
         == "Could not set up model: Tarfile could not be extracted"
     )
 
@@ -617,7 +617,10 @@ def test_user_process_setup_failure(local_s3, mocker, monkeypatch, tmp_path):
     parsed_result = json.loads(serialised_invocation)
 
     assert parsed_result["return_code"] == 1
-    assert parsed_result["error_message"] == "failure in user process setup"
+    assert (
+        parsed_result["user_safe_error_message"]
+        == "failure in user process setup"
+    )
 
 
 def test_runtime_setup_result_written(local_s3, monkeypatch):
@@ -657,4 +660,4 @@ def test_runtime_setup_result_written(local_s3, monkeypatch):
     parsed_result = json.loads(serialised_invocation)
 
     assert parsed_result["return_code"] == 0
-    assert parsed_result["error_message"] == ""
+    assert parsed_result["user_safe_error_message"] == ""
