@@ -12,7 +12,6 @@ from click.testing import CliRunner
 from sagemaker_shim.cli import async_to_sync, cli
 from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.models import (
-    RuntimeSetupResult,
     S3Resources,
     get_s3_file_content,
     get_s3_resources,
@@ -651,7 +650,7 @@ def test_runtime_setup_result_written(local_s3, monkeypatch):
         local_s3.output_bucket_name,
     )
     monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", f"runtime/{pk}"
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", f"runtime/{pk}/"
     )
 
     runner = CliRunner()
@@ -665,34 +664,3 @@ def test_runtime_setup_result_written(local_s3, monkeypatch):
 
     assert parsed_result["return_code"] == 0
     assert parsed_result["error_message"] == ""
-
-
-def test_runtime_setup_result(monkeypatch):
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
-        "some_bucket_name",
-    )
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", "some_prefix/"
-    )
-
-    runtime_setup_result = RuntimeSetupResult(return_code=0)
-
-    assert runtime_setup_result.return_code == 0
-    assert runtime_setup_result.error_message == ""
-    assert runtime_setup_result.output_bucket_name == "some_bucket_name"
-    assert runtime_setup_result.output_prefix == "some_prefix/"
-
-
-def test_runtime_setup_result_adds_forward_slash_to_prefix(monkeypatch):
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME",
-        "some_bucket_name",
-    )
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", "some_prefix"
-    )
-
-    runtime_setup_result = RuntimeSetupResult(return_code=0)
-
-    assert runtime_setup_result.output_prefix == "some_prefix/"

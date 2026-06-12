@@ -29,7 +29,7 @@ from zipfile import BadZipFile
 import aioboto3
 import httpx
 from botocore.config import Config
-from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
+from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
 from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.extract import safe_extract
@@ -248,38 +248,7 @@ class RuntimeSetupResult(BaseModel):
 
     return_code: int
     error_message: str = ""
-    output_bucket_name: str = Field(
-        default_factory=lambda: os.environ.get(
-            "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME", ""
-        ),
-        validate_default=True,
-    )
-    output_prefix: str = Field(
-        default_factory=lambda: os.environ.get(
-            "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", ""
-        ),
-        validate_default=True,
-    )
     sagemaker_shim_version: str = version("sagemaker-shim")
-
-    @field_validator("output_prefix")
-    @classmethod
-    def validate_prefix(cls, v: str) -> str:
-        if not v:
-            raise ValueError("Prefix cannot be blank")
-
-        if v[-1] != "/":
-            v += "/"
-
-        return v
-
-    @field_validator("output_bucket_name")
-    @classmethod
-    def validate_bucket_name(cls, v: str) -> str:
-        if not v:
-            raise ValueError("Bucket name cannot be blank")
-
-        return v
 
 
 async def upload_runtime_setup_result(
@@ -294,20 +263,23 @@ async def upload_runtime_setup_result(
         digestmod=hashlib.sha256,
     ).hexdigest()
 
-    bucket_key = (
-        f"{runtime_setup_result.output_prefix}.sagemaker_shim/"
-        f"runtime_setup_result.json"
+    output_bucket_name = os.environ.get(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME", ""
     )
+    output_prefix = os.environ.get(
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", ""
+    )
+    bucket_key = f"{output_prefix}.sagemaker_shim/runtime_setup_result.json"
 
     logger.info(
         f"Uploading {bucket_key=} in "
-        f"{runtime_setup_result.output_bucket_name=} with {runtime_setup_result=}"
+        f"{output_bucket_name=} with {runtime_setup_result=}"
     )
 
     async with s3_resources.semaphore:
         await s3_resources.client.upload_fileobj(
             Fileobj=io.BytesIO(content),
-            Bucket=runtime_setup_result.output_bucket_name,
+            Bucket=output_bucket_name,
             Key=bucket_key,
             ExtraArgs={
                 "Metadata": {"signature_hmac_sha256": signature},
