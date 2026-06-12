@@ -12,7 +12,7 @@ dependencies = [
     "botocore",
 ]
 name = "sagemaker-shim"
-version = "0.8.0a1"
+version = "0.8.0"
 description = "Adapts algorithms that implement the Grand Challenge inference API for running in SageMaker"
 readme = "README.md"
 classifiers = [
@@ -35,7 +35,6 @@ dev = [
     "pytest-xdist",
     "pytest-cov",
     "staticx;sys_platform=='linux'",
-    "setuptools<81",  # Due to https://github.com/JonathonReinhart/staticx/issues/295
     "pyinstaller",
     "boto3-stubs[s3]",
     "pytest-mock",
