@@ -76,6 +76,12 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
             container_env = copy.deepcopy(local_s3.env)
 
             container_env["AWS_S3_ENDPOINT_URL"] = "http://local-s3:8333"
+            container_env[
+                "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME"
+            ] = local_s3.output_bucket_name
+            container_env[
+                "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX"
+            ] = "test/"
 
             container = client.containers.run(
                 image=new_tag,
