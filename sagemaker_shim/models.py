@@ -269,6 +269,10 @@ async def upload_runtime_setup_result(
     output_prefix = os.environ.get(
         "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", ""
     )
+
+    if output_prefix[-1] != "/":
+        output_prefix += "/"
+
     bucket_key = f"{output_prefix}.sagemaker_shim/runtime_setup_result.json"
 
     logger.info(

@@ -650,7 +650,7 @@ def test_runtime_setup_result_written(local_s3, monkeypatch):
         local_s3.output_bucket_name,
     )
     monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", f"runtime/{pk}/"
+        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX", f"runtime/{pk}"
     )
 
     runner = CliRunner()
