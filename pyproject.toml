@@ -35,7 +35,6 @@ dev = [
     "pytest-xdist",
     "pytest-cov",
     "staticx;sys_platform=='linux'",
-    "setuptools",
     "pyinstaller",
     "boto3-stubs[s3]",
     "pytest-mock",
