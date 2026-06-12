@@ -243,6 +243,52 @@ def parse_s3_uri(*, s3_uri: str) -> S3File:
     return S3File(bucket=match.group("bucket"), key=match.group("key"))
 
 
+class RuntimeSetupResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    return_code: int
+    user_safe_error_message: str = ""
+    sagemaker_shim_version: str = version("sagemaker-shim")
+
+    async def upload(self, *, s3_resources: S3Resources) -> None:
+        content = self.model_dump_json().encode("utf-8")
+        signature = hmac.new(
+            key=bytes.fromhex(
+                os.environ.get("GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", "")
+            ),
+            msg=content,
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+
+        output_bucket_name = validate_bucket_name(
+            os.environ["GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME"]
+        )
+        output_prefix = os.environ[
+            "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX"
+        ]
+
+        if output_prefix[-1] != "/":
+            output_prefix += "/"
+
+        bucket_key = (
+            f"{output_prefix}.sagemaker_shim/runtime_setup_result.json"
+        )
+
+        logger.info(
+            f"Uploading {bucket_key=} in {output_bucket_name=} with {self}"
+        )
+
+        async with s3_resources.semaphore:
+            await s3_resources.client.upload_fileobj(
+                Fileobj=io.BytesIO(content),
+                Bucket=output_bucket_name,
+                Key=bucket_key,
+                ExtraArgs={
+                    "Metadata": {"signature_hmac_sha256": signature},
+                },
+            )
+
+
 async def get_s3_file_content(
     *, s3_uri: str, s3_resources: S3Resources
 ) -> bytes:
@@ -530,6 +576,7 @@ class InferenceResult(BaseModel):
 
     pk: str
     return_code: int
+    user_safe_error_message: str = ""
     exec_duration: timedelta | None
     invoke_duration: timedelta | None
     outputs: list[InferenceIO]
@@ -1119,6 +1166,7 @@ class InferenceTask(BaseModel):
                 inference_result = InferenceResult(
                     pk=self.pk,
                     return_code=1,
+                    user_safe_error_message=str(exception_group),
                     outputs=[],
                     exec_duration=None,
                     invoke_duration=None,
@@ -1147,15 +1195,17 @@ class InferenceTask(BaseModel):
 
             start = time.monotonic()
 
+            user_safe_error_message = ""
             try:
                 return_code = await asyncio.wait_for(
                     user_process.run_inference(task=self),
                     timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
+                user_safe_error_message = "Time limit exceeded"
                 log_external(
                     level=logging.ERROR,
-                    msg="Time limit exceeded",
+                    msg=user_safe_error_message,
                     task_pk=self.pk,
                 )
                 return_code = 1
@@ -1172,6 +1222,7 @@ class InferenceTask(BaseModel):
             return InferenceResult(
                 pk=self.pk,
                 return_code=return_code,
+                user_safe_error_message=user_safe_error_message,
                 outputs=outputs,
                 exec_duration=(
                     timedelta(seconds=duration)
