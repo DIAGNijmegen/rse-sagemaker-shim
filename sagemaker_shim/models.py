@@ -1168,7 +1168,7 @@ class InferenceTask(BaseModel):
                 inference_result = InferenceResult(
                     pk=self.pk,
                     return_code=1,
-                    error_message=str(exception_group.exceptions[-1]),
+                    error_message=str(exception_group),
                     outputs=[],
                     exec_duration=None,
                     invoke_duration=None,
