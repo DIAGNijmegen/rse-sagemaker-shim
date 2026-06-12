@@ -263,9 +263,9 @@ async def upload_runtime_setup_result(
         digestmod=hashlib.sha256,
     ).hexdigest()
 
-    output_bucket_name = os.environ[
-        "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME"
-    ]
+    output_bucket_name = validate_bucket_name(
+        os.environ["GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_BUCKET_NAME"]
+    )
     output_prefix = os.environ[
         "GRAND_CHALLENGE_COMPONENT_RUNTIME_OUTPUT_PREFIX"
     ]
