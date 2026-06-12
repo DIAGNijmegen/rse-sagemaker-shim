@@ -1220,8 +1220,6 @@ class InferenceTask(BaseModel):
                 outputs = await self.upload_output(s3_resources=s3_resources)
             else:
                 outputs = set()
-                if not error_message:
-                    error_message = "Process returned non-zero exit code"
 
             return InferenceResult(
                 pk=self.pk,
