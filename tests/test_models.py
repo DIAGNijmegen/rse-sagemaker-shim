@@ -1221,3 +1221,42 @@ async def test_exec_result_duration(local_s3, monkeypatch):
     assert result.return_code == 0
     assert result.exec_duration is not None
     assert result.invoke_duration is None
+
+
+@pytest.mark.asyncio
+async def test_user_error_message(local_s3, monkeypatch, capsys):
+    cmd = ["bash", "-c", 'echo "My Custom Error" && exit 1']
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    process = UserProcess()
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=local_s3.output_bucket_name,
+        output_prefix=str(prefix),
+        timeout=timedelta(seconds=1),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
+
+    assert result.return_code == 1
+    assert result.user_safe_error_message == "My Custom Error"
+
+    captured = capsys.readouterr()
+    assert "My Custom Error" in captured.out
+    assert (
+        '{"log": "My Custom Error", "level": "INFO", "source": "stdout", '
+        f'"internal": false, "task": "{pk}"}}\n' in captured.out
+    )
