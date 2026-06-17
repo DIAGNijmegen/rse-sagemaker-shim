@@ -15,6 +15,7 @@ import tarfile
 import time
 from asyncio import Semaphore
 from base64 import b64decode
+from collections import deque
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -577,6 +578,7 @@ class InferenceResult(BaseModel):
     pk: str
     return_code: int
     user_safe_error_message: str = ""
+    user_process_last_stderr_lines: list[str] = []
     exec_duration: timedelta | None
     invoke_duration: timedelta | None
     outputs: list[InferenceIO]
@@ -596,7 +598,7 @@ class UserProcess(ProcUserMixin):
         self._stdout_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._current_task_pk: str | None = None
-        self._last_error_message: str = ""
+        self._last_stderr_lines: deque[str] = deque(maxlen=100)
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
@@ -636,8 +638,8 @@ class UserProcess(ProcUserMixin):
             return self._stderr_task
 
     @property
-    def last_error_message(self) -> str:
-        return self._last_error_message
+    def last_stderr_lines(self) -> deque[str]:
+        return self._last_stderr_lines
 
     @property
     def cmd(self) -> Any:
@@ -1030,7 +1032,7 @@ class UserProcess(ProcUserMixin):
             )
 
             if level > logging.INFO:
-                self._last_error_message = log_message.rstrip()
+                self._last_stderr_lines.append(log_message)
 
     async def execute(self) -> int:
         """
@@ -1220,12 +1222,6 @@ class InferenceTask(BaseModel):
                     task_pk=self.pk,
                 )
                 return_code = 1
-            else:
-                if return_code != 0:
-                    user_safe_error_message = (
-                        user_process.last_error_message
-                        or "Process returned non-zero exist code"
-                    )
 
             duration = time.monotonic() - start
 
@@ -1240,6 +1236,7 @@ class InferenceTask(BaseModel):
                 pk=self.pk,
                 return_code=return_code,
                 user_safe_error_message=user_safe_error_message,
+                user_process_last_stderr_lines=user_process.last_stderr_lines,
                 outputs=outputs,
                 exec_duration=(
                     timedelta(seconds=duration)
