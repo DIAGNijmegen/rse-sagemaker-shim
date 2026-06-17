@@ -1162,11 +1162,14 @@ class InferenceTask(BaseModel):
                         msg=str(exception),
                         task_pk=self.pk,
                     )
+                user_safe_error_message = "\n".join(
+                    [str(e) for e in exception_group.exceptions]
+                )
 
                 inference_result = InferenceResult(
                     pk=self.pk,
                     return_code=1,
-                    user_safe_error_message=str(exception_group),
+                    user_safe_error_message=user_safe_error_message,
                     outputs=[],
                     exec_duration=None,
                     invoke_duration=None,

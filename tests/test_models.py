@@ -548,6 +548,7 @@ async def test_exec_timeout(local_s3, monkeypatch, capsys):
     assert result.return_code == 1
     assert int(result.exec_duration.total_seconds()) == 1
     assert result.invoke_duration is None  # should only be set for invocation
+    assert result.user_safe_error_message == "Time limit exceeded"
 
     captured = capsys.readouterr()
     # "Time limit exceeded" must be the last log for the user error
@@ -597,6 +598,10 @@ async def test_non_existent_user(local_s3, monkeypatch, capsys):
     assert result.return_code == 1
     assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
+    assert (
+        result.user_safe_error_message
+        == "Invalid argument for the containers USER instruction"
+    )
 
     captured = capsys.readouterr()
     # Invalid argument must be the last log for the user error
@@ -642,6 +647,11 @@ async def test_user_cmd_permission_denied(
     assert result.return_code == 1
     assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
+    assert result.user_safe_error_message == (
+        "The user defined in the containers USER instruction "
+        "does not have permission to execute the command defined by "
+        "the containers ENTRYPOINT and CMD instructions"
+    )
 
     captured = capsys.readouterr()
     # No permission must be the last log for the user error
@@ -684,6 +694,10 @@ async def test_user_cmd_missing(local_s3, monkeypatch, capsys):
     assert result.return_code == 1
     assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
+    assert result.user_safe_error_message == (
+        "The command defined by the containers ENTRYPOINT "
+        "and CMD instructions does not exist"
+    )
 
     captured = capsys.readouterr()
     # Command not found must be the last log for the user error
@@ -1045,6 +1059,7 @@ async def test_invoke_call_timeout(local_s3, monkeypatch, capsys):
     assert result.return_code == 1
     assert int(result.invoke_duration.total_seconds()) == 1
     assert result.exec_duration is None  # should only be set for exec
+    assert result.user_safe_error_message == "Time limit exceeded"
 
     captured = capsys.readouterr()
     # "Time limit exceeded" must be the last log for the user error
