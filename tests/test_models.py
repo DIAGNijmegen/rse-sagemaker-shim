@@ -548,6 +548,7 @@ async def test_exec_timeout(local_s3, monkeypatch, capsys):
     assert result.return_code == 1
     assert int(result.exec_duration.total_seconds()) == 1
     assert result.invoke_duration is None  # should only be set for invocation
+    assert result.user_safe_error_message == "Time limit exceeded"
 
     captured = capsys.readouterr()
     # "Time limit exceeded" must be the last log for the user error
@@ -597,6 +598,10 @@ async def test_non_existent_user(local_s3, monkeypatch, capsys):
     assert result.return_code == 1
     assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
+    assert (
+        result.user_safe_error_message
+        == "Invalid argument for the containers USER instruction"
+    )
 
     captured = capsys.readouterr()
     # Invalid argument must be the last log for the user error
@@ -642,6 +647,11 @@ async def test_user_cmd_permission_denied(
     assert result.return_code == 1
     assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
+    assert result.user_safe_error_message == (
+        "The user defined in the containers USER instruction "
+        "does not have permission to execute the command defined by "
+        "the containers ENTRYPOINT and CMD instructions"
+    )
 
     captured = capsys.readouterr()
     # No permission must be the last log for the user error
@@ -684,6 +694,10 @@ async def test_user_cmd_missing(local_s3, monkeypatch, capsys):
     assert result.return_code == 1
     assert result.exec_duration is None
     assert result.invoke_duration is None  # should only be set for invocation
+    assert result.user_safe_error_message == (
+        "The command defined by the containers ENTRYPOINT "
+        "and CMD instructions does not exist"
+    )
 
     captured = capsys.readouterr()
     # Command not found must be the last log for the user error
@@ -1045,6 +1059,7 @@ async def test_invoke_call_timeout(local_s3, monkeypatch, capsys):
     assert result.return_code == 1
     assert int(result.invoke_duration.total_seconds()) == 1
     assert result.exec_duration is None  # should only be set for exec
+    assert result.user_safe_error_message == "Time limit exceeded"
 
     captured = capsys.readouterr()
     # "Time limit exceeded" must be the last log for the user error
@@ -1206,3 +1221,50 @@ async def test_exec_result_duration(local_s3, monkeypatch):
     assert result.return_code == 0
     assert result.exec_duration is not None
     assert result.invoke_duration is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expected_return_code", (1, 0))
+async def test_user_process_last_stderr_lines(
+    local_s3, monkeypatch, capsys, expected_return_code
+):
+    cmd = [
+        "bash",
+        "-c",
+        f'echo "My Custom Error" >&2 && exit {expected_return_code}',
+    ]
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    process = UserProcess()
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=local_s3.output_bucket_name,
+        output_prefix=str(prefix),
+        timeout=timedelta(seconds=1),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
+
+    assert result.return_code == expected_return_code
+    assert result.user_safe_error_message == ""
+    assert result.user_process_last_stderr_lines == ["My Custom Error\n"]
+
+    captured = capsys.readouterr()
+    assert "My Custom Error" in captured.out
+    assert (
+        '{"log": "My Custom Error", "level": "WARNING", "source": "stderr", '
+        f'"internal": false, "task": "{pk}"}}\n' in captured.err
+    )

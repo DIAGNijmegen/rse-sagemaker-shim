@@ -200,6 +200,8 @@ def test_bad_command_inference_from_task_list(local_s3, monkeypatch):
 
     assert parsed_result["return_code"] == expected_return_code
     assert parsed_result["pk"] == pk1
+    assert parsed_result["user_safe_error_message"] == ""
+    assert parsed_result["user_process_last_stderr_lines"] == []
 
     with pytest.raises(botocore.exceptions.ClientError) as error:
         sync_s3_operation(
@@ -349,6 +351,8 @@ def test_bad_command_inference_from_s3_uri(local_s3, monkeypatch):
 
     assert parsed_result["return_code"] == expected_return_code
     assert parsed_result["pk"] == pk1
+    assert parsed_result["user_safe_error_message"] == ""
+    assert parsed_result["user_process_last_stderr_lines"] == []
 
     with pytest.raises(botocore.exceptions.ClientError) as error:
         sync_s3_operation(
