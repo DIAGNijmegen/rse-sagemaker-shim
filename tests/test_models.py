@@ -1225,7 +1225,7 @@ async def test_exec_result_duration(local_s3, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("expected_return_code", (1, 0))
-async def test_user_error_message(
+async def test_user_process_last_stderr_lines(
     local_s3, monkeypatch, capsys, expected_return_code
 ):
     cmd = [
