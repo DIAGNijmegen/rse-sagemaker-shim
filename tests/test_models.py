@@ -1225,7 +1225,7 @@ async def test_exec_result_duration(local_s3, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_user_error_message(local_s3, monkeypatch, capsys):
-    cmd = ["bash", "-c", 'echo "My Custom Error" && exit 1']
+    cmd = ["bash", "-c", 'echo "My Custom Error" >&2 && exit 1']
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
     process = UserProcess()
@@ -1257,6 +1257,6 @@ async def test_user_error_message(local_s3, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "My Custom Error" in captured.out
     assert (
-        '{"log": "My Custom Error", "level": "INFO", "source": "stdout", '
-        f'"internal": false, "task": "{pk}"}}\n' in captured.out
+        '{"log": "My Custom Error", "level": "WARNING", "source": "stderr", '
+        f'"internal": false, "task": "{pk}"}}\n' in captured.err
     )

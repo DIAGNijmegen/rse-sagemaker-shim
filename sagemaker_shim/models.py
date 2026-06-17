@@ -596,7 +596,7 @@ class UserProcess(ProcUserMixin):
         self._stdout_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._current_task_pk: str | None = None
-        self._last_log_message: str = ""
+        self._last_error_message: str = ""
 
     @staticmethod
     def decode_b64j(*, encoded: str | None) -> Any:
@@ -636,8 +636,8 @@ class UserProcess(ProcUserMixin):
             return self._stderr_task
 
     @property
-    def last_log_message(self) -> str:
-        return self._last_log_message
+    def last_error_message(self) -> str:
+        return self._last_error_message
 
     @property
     def cmd(self) -> Any:
@@ -1028,7 +1028,9 @@ class UserProcess(ProcUserMixin):
                 msg=log_message,
                 task_pk=self._current_task_pk,
             )
-            self._last_log_message = log_message.rstrip("\n")
+
+            if level > logging.INFO:
+                self._last_error_message = log_message.rstrip()
 
     async def execute(self) -> int:
         """
@@ -1221,7 +1223,7 @@ class InferenceTask(BaseModel):
             else:
                 if return_code != 0:
                     user_safe_error_message = (
-                        user_process.last_log_message
+                        user_process.last_error_message
                         or "Process returned non-zero exist code"
                     )
 
