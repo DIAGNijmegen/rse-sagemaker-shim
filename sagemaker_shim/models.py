@@ -35,6 +35,7 @@ from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.extract import safe_extract
 from sagemaker_shim.logging import STDOUT_LEVEL
+from sagemaker_shim.oom import make_child_oom_preexec_fn
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath  # pragma: no cover
@@ -867,6 +868,7 @@ class UserProcess(ProcUserMixin):
                 # The following should always be set to protect this environment
                 shell=False,
                 close_fds=True,
+                preexec_fn=make_child_oom_preexec_fn(),
             )
         except PermissionError as error:
             raise UserSafeError(
