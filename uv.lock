@@ -779,6 +779,7 @@ dependencies = [
     { name = "botocore" },
     { name = "click" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "uvicorn" },
 ]
 
@@ -786,7 +787,6 @@ dependencies = [
 dev = [
     { name = "boto3-stubs", extra = ["s3"] },
     { name = "docker" },
-    { name = "httpx" },
     { name = "pyinstaller" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -805,6 +805,7 @@ requires-dist = [
     { name = "botocore" },
     { name = "click" },
     { name = "fastapi", specifier = "!=0.89.0" },
+    { name = "httpx" },
     { name = "uvicorn" },
 ]
 
@@ -812,7 +813,6 @@ requires-dist = [
 dev = [
     { name = "boto3-stubs", extras = ["s3"] },
     { name = "docker", specifier = "!=7.0.0" },
-    { name = "httpx" },
     { name = "pyinstaller" },
     { name = "pytest", specifier = "!=8.0.0" },
     { name = "pytest-asyncio" },

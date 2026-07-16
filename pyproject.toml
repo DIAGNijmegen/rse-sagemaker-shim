@@ -10,6 +10,7 @@ dependencies = [
     "click",
     "aioboto3",
     "botocore",
+    "httpx",
 ]
 name = "sagemaker-shim"
 version = "0.8.1"
@@ -30,7 +31,6 @@ sagemaker-shim = "sagemaker_shim.cli:cli"
 dev = [
     "pytest!=8.0.0",
     "docker!=7.0.0",
-    "httpx",
     "pytest-randomly",
     "pytest-xdist",
     "pytest-cov",
