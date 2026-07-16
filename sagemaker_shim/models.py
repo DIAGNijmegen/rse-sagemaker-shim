@@ -365,7 +365,7 @@ async def download_and_extract_tarball(
         try:
             with ProcUserTarfile.open(fileobj=f, mode="r") as tar:
                 tar.extractall(path=dest, filter="data")
-        except (tarfile.TarError, FileNotFoundError) as error:
+        except Exception as error:
             logger.error(error, exc_info=True)
             raise UserSafeError("Tarfile could not be extracted") from error
 
