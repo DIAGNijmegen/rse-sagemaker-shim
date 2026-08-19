@@ -1090,10 +1090,11 @@ class UserProcess(ProcUserMixin):
             if response.status_code == 201:
                 return 0
             else:
-                raise UserSafeError(
+                logger.error(
                     f"Invoke endpoint returned status {response.status_code}, "
                     f"expected 201"
                 )
+                return 1
 
 
 class InferenceTask(BaseModel):
