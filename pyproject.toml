@@ -13,7 +13,7 @@ dependencies = [
     "httpx",
 ]
 name = "sagemaker-shim"
-version = "0.8.1"
+version = "0.8.2"
 description = "Adapts algorithms that implement the Grand Challenge inference API for running in SageMaker"
 readme = "README.md"
 classifiers = [
