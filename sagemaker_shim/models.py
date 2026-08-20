@@ -1096,6 +1096,15 @@ class UserProcess(ProcUserMixin):
                 )
                 return 1
 
+    async def drain_stderr(self) -> None:
+        deadline = asyncio.get_event_loop().time() + 1.0
+
+        while (
+            self.process.stderr._buffer  # type: ignore[union-attr]
+            and asyncio.get_event_loop().time() < deadline
+        ):
+            await asyncio.sleep(0)
+
 
 class InferenceTask(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -1232,6 +1241,7 @@ class InferenceTask(BaseModel):
                 outputs = await self.upload_output(s3_resources=s3_resources)
             else:
                 outputs = set()
+                await user_process.drain_stderr()  # Ensure we have last stderr lines
 
             return InferenceResult(
                 pk=self.pk,

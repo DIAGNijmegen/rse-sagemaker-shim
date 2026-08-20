@@ -772,7 +772,7 @@ wheels = [
 
 [[package]]
 name = "sagemaker-shim"
-version = "0.8.1"
+version = "0.8.3b1"
 source = { editable = "." }
 dependencies = [
     { name = "aioboto3" },
