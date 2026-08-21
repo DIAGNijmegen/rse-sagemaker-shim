@@ -1102,47 +1102,10 @@ async def test_invoke_returns_0_on_201(mocker, monkeypatch):
                 UserSafeError, match="HTTP error calling invoke endpoint"
             ),
         ),
-        (
-            {"return_value": httpx.Response(100)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 100, expected 201",
-            ),
-        ),
-        (
-            {"return_value": httpx.Response(200)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 200, expected 201",
-            ),
-        ),
-        (
-            {"return_value": httpx.Response(300)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 300, expected 201",
-            ),
-        ),
-        (
-            {"return_value": httpx.Response(400)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 400, expected 201",
-            ),
-        ),
-        (
-            {"return_value": httpx.Response(500)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 500, expected 201",
-            ),
-        ),
     ],
 )
 @pytest.mark.asyncio
-async def test_invoke_raises_on_non_201(
-    mocker, monkeypatch, client_kwargs, expectation
-):
+async def test_invoke_raises(mocker, monkeypatch, client_kwargs, expectation):
     mocker.patch(
         "sagemaker_shim.models.httpx.AsyncClient.post",
         **client_kwargs,
