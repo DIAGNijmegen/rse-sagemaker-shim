@@ -1088,22 +1088,22 @@ class UserProcess(ProcUserMixin):
                 ) from error
 
             if response.status_code == 201:
-                return 0
+                return_code = 0
             else:
                 logger.error(
                     f"Invoke endpoint returned status {response.status_code}, "
                     f"expected 201"
                 )
-                return 1
+                return_code = 1
 
-    async def drain_stderr(self) -> None:
-        deadline = asyncio.get_event_loop().time() + 1.0
+            # there may be stderr data still in the kernel pipe buffer that
+            # hasn't been delivered to the StreamReader yet. A real
+            # sleep (not just a yield) is needed so the event loop runs
+            # its I/O selector, transfers pipe data into the stream
+            # reader, and lets the stderr task consume it.
+            await asyncio.sleep(0.1)
 
-        while (
-            self.process.stderr._buffer  # type: ignore[union-attr]
-            and asyncio.get_event_loop().time() < deadline
-        ):
-            await asyncio.sleep(0)
+            return return_code
 
 
 class InferenceTask(BaseModel):
@@ -1241,7 +1241,6 @@ class InferenceTask(BaseModel):
                 outputs = await self.upload_output(s3_resources=s3_resources)
             else:
                 outputs = set()
-                await user_process.drain_stderr()  # Ensure we have last stderr lines
 
             return InferenceResult(
                 pk=self.pk,
