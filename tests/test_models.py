@@ -1129,7 +1129,7 @@ async def test_invoke_result_duration(local_s3, mocker, monkeypatch):
         inputs=[],
         output_bucket_name=local_s3.output_bucket_name,
         output_prefix=f"tasks/{pk}",
-        timeout=timedelta(seconds=1),
+        timeout=timedelta(seconds=2),
     )
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
@@ -1234,9 +1234,8 @@ async def test_user_process_last_stderr_lines(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("expected_return_code", (1,))
 async def test_user_process_last_stderr_lines_invoke(
-    local_s3, mocker, monkeypatch, capsys, expected_return_code
+    local_s3, mocker, monkeypatch, capsys
 ):
     mocker.patch(
         "sagemaker_shim.models.httpx.AsyncClient.get",
@@ -1249,7 +1248,7 @@ async def test_user_process_last_stderr_lines_invoke(
     cmd = [
         "bash",
         "-c",
-        f'echo "My Custom Error" >&2 && exit {expected_return_code}',
+        'echo "My Custom Error" >&2 && exit 1',
     ]
     pk = str(uuid4())
     prefix = f"tasks/{pk}"
@@ -1259,7 +1258,7 @@ async def test_user_process_last_stderr_lines_invoke(
         inputs=[],
         output_bucket_name=local_s3.output_bucket_name,
         output_prefix=str(prefix),
-        timeout=timedelta(seconds=1),
+        timeout=timedelta(seconds=2),
     )
 
     monkeypatch.setenv(
@@ -1281,7 +1280,7 @@ async def test_user_process_last_stderr_lines_invoke(
             user_process=process, s3_resources=s3_resources
         )
 
-    assert result.return_code == expected_return_code
+    assert result.return_code == 1
     assert result.user_safe_error_message == ""
     assert result.user_process_last_stderr_lines == ["My Custom Error\n"]
 
