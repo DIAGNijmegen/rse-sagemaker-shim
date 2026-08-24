@@ -1101,7 +1101,7 @@ class UserProcess(ProcUserMixin):
             # sleep (not just a yield) is needed so the event loop runs
             # its I/O selector, transfers pipe data into the stream
             # reader, and lets the stderr task consume it.
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
 
             return return_code
 
