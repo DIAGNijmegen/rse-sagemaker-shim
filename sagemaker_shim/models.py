@@ -1238,7 +1238,8 @@ class InferenceTask(BaseModel):
             try:
                 return_code = await asyncio.wait_for(
                     user_process.run_inference(task=self),
-                    timeout=self.timeout.total_seconds(),
+                    timeout=3,
+                    # timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
                 user_process.mark_unhealthy()
