@@ -93,6 +93,9 @@ app = FastAPI(lifespan=lifespan)
 async def ping() -> Response:
     logger.debug("ping called")
 
+    if USER_PROCESS is None or not USER_PROCESS.healthy:
+        return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+
     return Response(status_code=status.HTTP_200_OK)
 
 
@@ -108,12 +111,15 @@ async def execution_parameters() -> dict[str, int | str]:
 
 
 @app.post("/invocations")
-async def invocations(task: InferenceTask) -> InferenceResult:
+async def invocations(task: InferenceTask) -> InferenceResult | Response:
     logger.debug("invocations called")
     logger.debug(f"{task=}")
 
     if USER_PROCESS is None:
         raise RuntimeError("USER_PROCESS should be initialized")
+
+    if not USER_PROCESS.healthy:
+        return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     async with get_s3_resources() as s3_resources:
         return await task.run_inference(
