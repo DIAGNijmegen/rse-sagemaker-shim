@@ -32,7 +32,7 @@ import httpx
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
-from sagemaker_shim.exceptions import InferenceTimeoutError, UserSafeError
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.extract import safe_extract
 from sagemaker_shim.logging import STDOUT_LEVEL
 
@@ -1077,9 +1077,7 @@ class UserProcess(ProcUserMixin):
                     timeout=timeout.total_seconds(),
                 )
             except httpx.TimeoutException as error:
-                raise InferenceTimeoutError(
-                    "Invoke time limit exceeded"
-                ) from error
+                raise UserSafeError("Invoke time limit exceeded") from error
             except httpx.ConnectError as error:
                 raise UserSafeError(
                     "Could not connect to invoke endpoint"
@@ -1179,28 +1177,6 @@ class InferenceTask(BaseModel):
                 inference_result = await self._run_inference(
                     user_process=user_process, s3_resources=s3_resources
                 )
-            except* InferenceTimeoutError:
-                user_safe_error_message = "Time limit exceeded"
-                log_external(
-                    level=logging.ERROR,
-                    msg=user_safe_error_message,
-                    task_pk=self.pk,
-                )
-                inference_result = InferenceResult(
-                    pk=self.pk,
-                    return_code=1,
-                    user_safe_error_message=user_safe_error_message,
-                    outputs=[],
-                    exec_duration=None,
-                    invoke_duration=None,
-                )
-                await asyncio.shield(
-                    self.upload_inference_result(
-                        inference_result=inference_result,
-                        s3_resources=s3_resources,
-                    )
-                )
-                raise
             except* UserSafeError as exception_group:
                 for exception in exception_group.exceptions:
                     log_external(
@@ -1248,8 +1224,14 @@ class InferenceTask(BaseModel):
                     user_process.run_inference(task=self),
                     timeout=self.timeout.total_seconds(),
                 )
-            except TimeoutError as error:
-                raise InferenceTimeoutError("Time limit exceeded") from error
+            except TimeoutError:
+                user_safe_error_message = "Time limit exceeded"
+                log_external(
+                    level=logging.ERROR,
+                    msg=user_safe_error_message,
+                    task_pk=self.pk,
+                )
+                return_code = 1
 
             duration = time.monotonic() - start
 

@@ -119,54 +119,6 @@ def test_invocations_endpoint(client, tmp_path, monkeypatch, capsys, local_s3):
     assert response["return_code"] == 0
 
 
-def test_invocations_exit_on_timeout(
-    client, tmp_path, monkeypatch, capsys, local_s3
-):
-    input_path = tmp_path / "input"
-    output_path = tmp_path / "output"
-    linked_input_parent = tmp_path / "linked-input"
-
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
-        str(linked_input_parent),
-    )
-
-    pk = str(uuid4())
-    data = {
-        "pk": pk,
-        "inputs": [],
-        "output_bucket_name": local_s3.output_bucket_name,
-        "output_prefix": f"test/{pk}",
-        "timeout": "PT1S",
-    }
-
-    input_path.mkdir()
-    output_path.mkdir()
-
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J",
-        encode_b64j(
-            val=[
-                "sh",
-                "-c",
-                "sleep 2",
-            ]
-        ),
-    )
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_INPUT_PATH",
-        str(input_path),
-    )
-    monkeypatch.setenv(
-        "GRAND_CHALLENGE_COMPONENT_OUTPUT_PATH",
-        str(output_path),
-    )
-    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
-
-    with pytest.raises(SystemExit):
-        client.post("/invocations", json=data)
-
-
 @pytest.mark.parametrize(
     "cmd,entrypoint,expected",
     (

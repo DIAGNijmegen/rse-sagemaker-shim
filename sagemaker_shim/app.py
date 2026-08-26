@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status
 
-from sagemaker_shim.exceptions import InferenceTimeoutError, UserSafeError
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.models import (
     AuxiliaryData,
     InferenceResult,
@@ -116,10 +116,6 @@ async def invocations(task: InferenceTask) -> InferenceResult:
         raise RuntimeError("USER_PROCESS should be initialized")
 
     async with get_s3_resources() as s3_resources:
-        try:
-            return await task.run_inference(
-                user_process=USER_PROCESS, s3_resources=s3_resources
-            )
-        except* InferenceTimeoutError as error:
-            # If subprocess errors are handled our process should exit cleanly
-            raise SystemExit(0) from error
+        return await task.run_inference(
+            user_process=USER_PROCESS, s3_resources=s3_resources
+        )

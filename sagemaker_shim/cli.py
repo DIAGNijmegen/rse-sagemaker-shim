@@ -14,7 +14,7 @@ from botocore.exceptions import ClientError, NoCredentialsError
 from pydantic import ValidationError
 
 from sagemaker_shim.app import app
-from sagemaker_shim.exceptions import InferenceTimeoutError, UserSafeError
+from sagemaker_shim.exceptions import UserSafeError
 from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import (
     AuxiliaryData,
@@ -126,13 +126,9 @@ async def invoke(tasks: str, file: str) -> None:
 
             for task in parsed_tasks.root:
                 # Only run one task at a time
-                try:
-                    result = await task.run_inference(
-                        user_process=user_process, s3_resources=s3_resources
-                    )
-                except* InferenceTimeoutError as error_group:
-                    # If subprocess errors are handled our process should exit cleanly
-                    raise SystemExit(0) from error_group
+                result = await task.run_inference(
+                    user_process=user_process, s3_resources=s3_resources
+                )
 
                 # Fail fast
                 if result.return_code != 0:
