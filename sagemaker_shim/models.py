@@ -1088,12 +1088,22 @@ class UserProcess(ProcUserMixin):
                 ) from error
 
             if response.status_code == 201:
-                return 0
+                return_code = 0
             else:
-                raise UserSafeError(
+                logger.error(
                     f"Invoke endpoint returned status {response.status_code}, "
                     f"expected 201"
                 )
+                return_code = 1
+
+            # there may be stderr data still in the kernel pipe buffer that
+            # hasn't been delivered to the StreamReader yet. A real
+            # sleep (not just a yield) is needed so the event loop runs
+            # its I/O selector, transfers pipe data into the stream
+            # reader, and lets the stderr task consume it.
+            await asyncio.sleep(1)
+
+            return return_code
 
 
 class InferenceTask(BaseModel):
