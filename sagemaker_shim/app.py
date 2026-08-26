@@ -110,7 +110,7 @@ async def execution_parameters() -> dict[str, int | str]:
     }
 
 
-@app.post("/invocations")
+@app.post("/invocations", response_model=InferenceResult)
 async def invocations(task: InferenceTask) -> InferenceResult | Response:
     logger.debug("invocations called")
     logger.debug(f"{task=}")
