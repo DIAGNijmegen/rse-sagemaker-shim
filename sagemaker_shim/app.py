@@ -40,6 +40,26 @@ logger = logging.getLogger(__name__)
 
 
 USER_PROCESS: UserProcess | None = None
+_SHUTTING_DOWN: bool = False
+_SHUTDOWN_GRACE_PERIOD_SECONDS: float = 10.0
+
+
+def _initiate_shutdown() -> None:
+    global _SHUTTING_DOWN
+
+    if _SHUTTING_DOWN:
+        return
+
+    _SHUTTING_DOWN = True
+    logger.error("Container unhealthy, entering shutdown grace period")
+
+    loop = asyncio.get_event_loop()
+    loop.call_later(_SHUTDOWN_GRACE_PERIOD_SECONDS, _terminate)
+
+
+def _terminate() -> None:
+    logger.error("Grace period elapsed, terminating process")
+    os.kill(os.getpid(), signal.SIGTERM)
 
 
 @asynccontextmanager
@@ -95,12 +115,11 @@ app = FastAPI(lifespan=lifespan)
 async def ping() -> Response:
     logger.debug("ping called")
 
-    if USER_PROCESS is None:
+    if USER_PROCESS is None or _SHUTTING_DOWN:
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     if not USER_PROCESS.healthy:
-        logger.error("Container unhealthy, terminating process")
-        os.kill(os.getpid(), signal.SIGTERM)
+        _initiate_shutdown()
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     return Response(status_code=status.HTTP_200_OK)
@@ -125,12 +144,16 @@ async def invocations(task: InferenceTask) -> InferenceResult | Response:
     if USER_PROCESS is None:
         raise RuntimeError("USER_PROCESS should be initialized")
 
-    if not USER_PROCESS.healthy:
-        logger.error("Container unhealthy, terminating process")
-        os.kill(os.getpid(), signal.SIGTERM)
+    if _SHUTTING_DOWN or not USER_PROCESS.healthy:
+        _initiate_shutdown()
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     async with get_s3_resources() as s3_resources:
-        return await task.run_inference(
+        result = await task.run_inference(
             user_process=USER_PROCESS, s3_resources=s3_resources
         )
+
+    if not USER_PROCESS.healthy:
+        _initiate_shutdown()
+
+    return result

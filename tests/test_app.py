@@ -1,10 +1,12 @@
 import logging.config
 from asyncio.streams import _DEFAULT_LIMIT
 from copy import deepcopy
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 
+import sagemaker_shim.app
 from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import UserProcess
 from tests.utils import encode_b64j
@@ -219,3 +221,67 @@ def test_decode_b64j(val):
 
 def test_decode_returns_none():
     assert UserProcess.decode_b64j(encoded=None) is None
+
+
+class TestGracefulShutdown:
+    def test_ping_returns_503_when_unhealthy(self, client):
+        sagemaker_shim.app.USER_PROCESS._healthy = False
+
+        response = client.get("/ping")
+
+        assert response.status_code == 503
+
+    def test_ping_initiates_shutdown_when_unhealthy(self, client):
+        sagemaker_shim.app.USER_PROCESS._healthy = False
+
+        with patch("sagemaker_shim.app._terminate") as mock_terminate:
+            client.get("/ping")
+
+            assert sagemaker_shim.app._SHUTTING_DOWN is True
+            # _terminate is scheduled via call_later, not called directly
+            mock_terminate.assert_not_called()
+
+    def test_ping_returns_503_during_shutdown(self, client):
+        """Once shutdown is initiated, /ping returns 503 even if the
+        process hasn't terminated yet."""
+        sagemaker_shim.app._SHUTTING_DOWN = True
+
+        response = client.get("/ping")
+
+        assert response.status_code == 503
+
+    def test_invocations_returns_503_during_shutdown(self, client):
+        """Invocations that arrive during the grace period get a clean 503."""
+        sagemaker_shim.app._SHUTTING_DOWN = True
+
+        data = {
+            "pk": str(uuid4()),
+            "inputs": [],
+            "output_bucket_name": "test-bucket",
+            "output_prefix": "test/",
+            "timeout": "PT10S",
+        }
+        response = client.post("/invocations", json=data)
+
+        assert response.status_code == 503
+
+    def test_shutdown_only_initiated_once(self, client):
+        """Multiple unhealthy pings don't stack up shutdown calls."""
+        sagemaker_shim.app.USER_PROCESS._healthy = False
+
+        with patch("sagemaker_shim.app.asyncio.get_event_loop") as mock_loop:
+            client.get("/ping")
+            client.get("/ping")
+            client.get("/ping")
+
+            # call_later should only be called once
+            mock_loop.return_value.call_later.assert_called_once()
+
+    def test_terminate_sends_sigterm(self):
+        with patch("sagemaker_shim.app.os.kill") as mock_kill:
+            sagemaker_shim.app._terminate()
+
+            import os
+            import signal
+
+            mock_kill.assert_called_once_with(os.getpid(), signal.SIGTERM)

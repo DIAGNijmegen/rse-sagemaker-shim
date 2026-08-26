@@ -33,8 +33,11 @@ def pytest_sessionstart(session):
 def client():
     sagemaker_shim.app.USER_PROCESS = UserProcess()
     sagemaker_shim.app.USER_PROCESS._healthy = True
+    sagemaker_shim.app._SHUTTING_DOWN = False
 
-    return TestClient(app=sagemaker_shim.app.app)
+    yield TestClient(app=sagemaker_shim.app.app)
+
+    sagemaker_shim.app._SHUTTING_DOWN = False
 
 
 class LocalS3(NamedTuple):
