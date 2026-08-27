@@ -248,7 +248,7 @@ def test_invocations_returns_503_when_unhealthy(local_s3, client):
     assert response.status_code == 503
 
 
-def test_unhealthy_after_invocation_sends_sigterm(
+def test_unhealthy_after_invocation_due_to_timeout_sends_sigterm(
     mocker, monkeypatch, local_s3, client, tmp_path
 ):
     input_path = tmp_path / "input"
@@ -282,4 +282,28 @@ def test_unhealthy_after_invocation_sends_sigterm(
 
     assert response["return_code"] == 1
     assert response["user_safe_error_message"] == "Time limit exceeded"
+    mock_kill.assert_called_once_with(os.getpid(), signal.SIGTERM)
+
+
+def test_unhealthy_after_invocation_due_to_reset_io_failure_sends_sigterm(
+    mocker, local_s3, client
+):
+    pk = str(uuid4())
+    data = {
+        "pk": pk,
+        "inputs": [],
+        "output_bucket_name": local_s3.output_bucket_name,
+        "output_prefix": f"test/{pk}",
+        "timeout": "PT10S",
+    }
+    mock_kill = mocker.patch("sagemaker_shim.app.os.kill")
+
+    response = client.post("/invocations", json=data)
+    response = response.json()
+
+    assert response["return_code"] == 1
+    assert (
+        response["user_safe_error_message"]
+        == "The containers input and output directories could not be reset"
+    )
     mock_kill.assert_called_once_with(os.getpid(), signal.SIGTERM)
