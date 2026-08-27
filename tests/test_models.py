@@ -502,7 +502,7 @@ def test_reset_linked_input(tmp_path, monkeypatch):
         output_prefix="test",
         timeout=timedelta(),
     )
-    t.reset_io()
+    t.reset_io(user_process=None)
 
     expected_input_directory = linked_input_parent / "test-input"
 
@@ -1365,5 +1365,31 @@ async def test_user_process_unhealthy_after_invoke_timeout(mocker):
 
     with pytest.raises(UserSafeError, match="Invoke time limit exceeded"):
         await process.invoke(timeout=timedelta(seconds=1))
+
+    assert not process.healthy
+
+
+@pytest.mark.asyncio
+async def test_user_process_unhealthy_after_reset_io_failure(
+    local_s3, monkeypatch
+):
+    process = UserProcess()
+    process._healthy = True
+    pk = str(uuid4())
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=local_s3.output_bucket_name,
+        output_prefix=f"tasks/{pk}",
+        timeout=timedelta(seconds=1),
+    )
+
+    assert process.healthy, "Sanity check"
+
+    with pytest.raises(
+        UserSafeError,
+        match="The containers input and output directories could not be reset",
+    ):
+        await task.reset_io(user_process=process)
 
     assert not process.healthy

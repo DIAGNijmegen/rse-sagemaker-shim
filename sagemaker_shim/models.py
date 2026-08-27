@@ -1225,7 +1225,7 @@ class InferenceTask(BaseModel):
         self, *, user_process: UserProcess, s3_resources: S3Resources
     ) -> InferenceResult:
         try:
-            self.reset_io()
+            self.reset_io(user_process=user_process)
 
             await self.download_input(s3_resources=s3_resources)
 
@@ -1274,9 +1274,9 @@ class InferenceTask(BaseModel):
                 ),
             )
         finally:
-            self.reset_io()
+            self.reset_io(user_process=user_process)
 
-    def reset_io(self) -> None:
+    def reset_io(self, user_process: UserProcess) -> None:
         """Resets the input and output directories"""
         try:
             clean_path(path=self.input_path)
@@ -1284,6 +1284,7 @@ class InferenceTask(BaseModel):
             self.reset_linked_input()
         except Exception as error:
             logger.error(error, exc_info=True)
+            user_process.mark_unhealthy()
             raise UserSafeError(
                 "The containers input and output directories could not be reset"
             ) from error
