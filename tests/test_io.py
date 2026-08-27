@@ -374,7 +374,6 @@ async def test_inference_result_upload(
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
-    await process.setup()
 
     serialised_invocation = io.BytesIO()
 
@@ -432,7 +431,6 @@ async def test_inference_result_signed(
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", signing_key
     )
-    await process.setup()
 
     async with get_s3_resources() as s3_resources:
         result = await task.run_inference(
@@ -508,7 +506,6 @@ async def test_exec_duration_set(
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_SIGNING_KEY_HEX", signing_key
     )
-    await process.setup()
 
     async with get_s3_resources() as s3_resources:
         result = await task.run_inference(
@@ -567,7 +564,6 @@ async def test_invoke_duration_set(local_s3, tmp_path, mocker, monkeypatch):
         "GRAND_CHALLENGE_COMPONENT_API_METHOD",
         "invoke",
     )
-    await process.setup()
 
     async with get_s3_resources() as s3_resources:
         result = await task.run_inference(

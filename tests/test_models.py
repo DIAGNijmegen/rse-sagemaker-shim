@@ -537,7 +537,6 @@ async def test_exec_timeout(local_s3, monkeypatch, capsys):
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
-    await process.setup()
 
     logging.config.dictConfig(LOGGING_CONFIG)
 
@@ -588,7 +587,6 @@ async def test_non_existent_user(local_s3, monkeypatch, capsys):
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USER", "-gdfs")
-    await process.setup()
 
     logging.config.dictConfig(LOGGING_CONFIG)
 
@@ -638,7 +636,6 @@ async def test_user_cmd_permission_denied(
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
-    await process.setup()
 
     logging.config.dictConfig(LOGGING_CONFIG)
 
@@ -686,7 +683,6 @@ async def test_user_cmd_missing(local_s3, monkeypatch, capsys):
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
-    await process.setup()
 
     logging.config.dictConfig(LOGGING_CONFIG)
 
@@ -1145,7 +1141,6 @@ async def test_invoke_result_duration(local_s3, mocker, monkeypatch):
         "GRAND_CHALLENGE_COMPONENT_API_METHOD",
         "invoke",
     )
-    await process.setup()
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
@@ -1179,7 +1174,6 @@ async def test_exec_result_duration(local_s3, monkeypatch):
         "GRAND_CHALLENGE_COMPONENT_API_METHOD",
         "exec",
     )
-    await process.setup()
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
@@ -1219,7 +1213,6 @@ async def test_user_process_last_stderr_lines(
     )
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
     monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
-    await process.setup()
 
     logging.config.dictConfig(LOGGING_CONFIG)
 
@@ -1278,11 +1271,11 @@ async def test_user_process_last_stderr_lines_invoke(
         "GRAND_CHALLENGE_COMPONENT_API_METHOD",
         "invoke",
     )
-    await process.setup()
 
     logging.config.dictConfig(LOGGING_CONFIG)
 
     async with get_s3_resources() as s3_resources:
+        await process.setup()
         result = await task.run_inference(
             user_process=process, s3_resources=s3_resources
         )
