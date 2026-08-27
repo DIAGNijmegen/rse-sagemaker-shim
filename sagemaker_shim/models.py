@@ -852,9 +852,6 @@ class UserProcess(ProcUserMixin):
     async def run_inference(self, *, task: "InferenceTask") -> int:
         self._current_task_pk = task.pk
 
-        if not self.healthy:
-            raise UserSafeError("Container is marked as unhealthy.")
-
         if self.api_method == APIMethod.EXEC:
             return await self.execute()
         elif self.api_method == APIMethod.INVOKE:
