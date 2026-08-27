@@ -1,10 +1,13 @@
 import logging.config
+import os
+import signal
 from asyncio.streams import _DEFAULT_LIMIT
 from copy import deepcopy
 from uuid import uuid4
 
 import pytest
 
+import sagemaker_shim.app
 from sagemaker_shim.logging import LOGGING_CONFIG
 from sagemaker_shim.models import UserProcess
 from tests.utils import encode_b64j
@@ -219,3 +222,64 @@ def test_decode_b64j(val):
 
 def test_decode_returns_none():
     assert UserProcess.decode_b64j(encoded=None) is None
+
+
+def test_ping_returns_503_when_unhealthy(client):
+    sagemaker_shim.app.USER_PROCESS._healthy = False
+
+    response = client.get("/ping")
+
+    assert response.status_code == 503
+
+
+def test_invocations_returns_503_when_unhealthy(local_s3, client):
+    sagemaker_shim.app.USER_PROCESS._healthy = False
+    pk = str(uuid4())
+    data = {
+        "pk": pk,
+        "inputs": [],
+        "output_bucket_name": local_s3.output_bucket_name,
+        "output_prefix": f"test/{pk}",
+        "timeout": "PT1S",
+    }
+
+    response = client.post("/invocations", json=data)
+
+    assert response.status_code == 503
+
+
+def test_unhealthy_after_invocation_sends_sigterm(
+    mocker, monkeypatch, local_s3, client, tmp_path
+):
+    input_path = tmp_path / "input"
+    output_path = tmp_path / "output"
+    linked_input_parent = tmp_path / "linked-input"
+    pk = str(uuid4())
+    data = {
+        "pk": pk,
+        "inputs": [],
+        "output_bucket_name": local_s3.output_bucket_name,
+        "output_prefix": f"test/{pk}",
+        "timeout": "PT1S",
+    }
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_ENTRYPOINT_B64J",
+        encode_b64j(val=["sleep", "2"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_INPUT_PATH", str(input_path))
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_OUTPUT_PATH", str(output_path)
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_LINKED_INPUT_PARENT",
+        str(linked_input_parent),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    mock_kill = mocker.patch("sagemaker_shim.app.os.kill")
+
+    response = client.post("/invocations", json=data)
+    response = response.json()
+
+    assert response["return_code"] == 1
+    assert response["user_safe_error_message"] == "Time limit exceeded"
+    mock_kill.assert_called_once_with(os.getpid(), signal.SIGTERM)

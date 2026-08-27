@@ -32,6 +32,7 @@ def pytest_sessionstart(session):
 @pytest.fixture
 def client():
     sagemaker_shim.app.USER_PROCESS = UserProcess()
+    sagemaker_shim.app.USER_PROCESS._healthy = True
 
     return TestClient(app=sagemaker_shim.app.app)
 

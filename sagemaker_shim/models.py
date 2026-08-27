@@ -594,6 +594,7 @@ def log_external(*, level: int, msg: str, task_pk: str | None) -> None:
 
 class UserProcess(ProcUserMixin):
     def __init__(self) -> None:
+        self._healthy: bool = False
         self._process: asyncio.subprocess.Process | None = None
         self._stdout_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
@@ -609,6 +610,13 @@ class UserProcess(ProcUserMixin):
             return json.loads(
                 b64decode(encoded.encode("utf-8")).decode("utf-8")
             )
+
+    @property
+    def healthy(self) -> bool:
+        return self._healthy
+
+    def mark_unhealthy(self) -> None:
+        self._healthy = False
 
     @property
     def process(self) -> asyncio.subprocess.Process:
@@ -773,6 +781,7 @@ class UserProcess(ProcUserMixin):
 
     async def setup(self) -> None:
         if self.api_method == APIMethod.EXEC:
+            self._healthy = True
             return
         elif self.api_method == APIMethod.INVOKE:
             logger.info("Setting up user process for invoke mode")
@@ -842,6 +851,7 @@ class UserProcess(ProcUserMixin):
 
     async def run_inference(self, *, task: "InferenceTask") -> int:
         self._current_task_pk = task.pk
+
         if self.api_method == APIMethod.EXEC:
             return await self.execute()
         elif self.api_method == APIMethod.INVOKE:
@@ -944,6 +954,8 @@ class UserProcess(ProcUserMixin):
             await self.health_check()
         except UserSafeError as error:
             raise UserSafeError(f"Health check failed: {error}") from error
+        else:
+            self._healthy = True
 
     @staticmethod
     async def _cancel_tasks(*, tasks: Iterable[asyncio.Task[None]]) -> None:
@@ -1077,6 +1089,7 @@ class UserProcess(ProcUserMixin):
                     timeout=timeout.total_seconds(),
                 )
             except httpx.TimeoutException as error:
+                self.mark_unhealthy()
                 raise UserSafeError("Invoke time limit exceeded") from error
             except httpx.ConnectError as error:
                 raise UserSafeError(
@@ -1225,6 +1238,7 @@ class InferenceTask(BaseModel):
                     timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
+                user_process.mark_unhealthy()
                 user_safe_error_message = "Time limit exceeded"
                 log_external(
                     level=logging.ERROR,
