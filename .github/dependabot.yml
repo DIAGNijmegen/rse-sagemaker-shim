@@ -9,6 +9,16 @@ updates:
         patterns:
           - "*"
 
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    versioning-strategy: lockfile-only
+    groups:
+      python:
+        patterns:
+          - "*"
+
   - package-ecosystem: "pre-commit"
     directory: "/"
     schedule:
