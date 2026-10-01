@@ -43,6 +43,10 @@ dev = [
     "types-aiofiles",
 ]
 
+[tool.uv]
+exclude-newer = "7 days"
+package = true
+
 [tool.isort]
 profile = "black"
 known_first_party = ["sagemaker_shim", "tests"]
@@ -71,6 +75,3 @@ omit = [
     "tests/batch_transform.py",
     "sagemaker_shim/cli.py", # This is covered by docker integration tests
 ]
-
-[tool.uv]
-package = true
