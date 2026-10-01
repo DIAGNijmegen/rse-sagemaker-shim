@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import subprocess
 import sys
@@ -6,7 +7,7 @@ from pathlib import Path
 from time import sleep
 from typing import NamedTuple
 
-import boto3
+import aioboto3
 import docker
 import pytest
 from docker.models.containers import Container
@@ -81,10 +82,15 @@ def local_s3_container():
         for key, value in environment.items():
             mpatch.setenv(key, value)
 
-        s3_client = boto3.client("s3", endpoint_url=s3_endpoint_url)
+        async def create_buckets() -> None:
+            session = aioboto3.Session()
+            async with session.client(
+                "s3", endpoint_url=s3_endpoint_url
+            ) as s3_client:
+                for bucket_name in {input_bucket_name, output_bucket_name}:
+                    await s3_client.create_bucket(Bucket=bucket_name)
 
-        for bucket_name in {input_bucket_name, output_bucket_name}:
-            s3_client.create_bucket(Bucket=bucket_name)
+        asyncio.run(create_buckets())
 
         yield LocalS3(
             input_bucket_name=input_bucket_name,
