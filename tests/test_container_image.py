@@ -35,10 +35,6 @@ ALPINE_IMAGE = (
     "python@sha256:"
     "e6dae589c1c05976188fd3bd019afd091445fc533ed2ea29001beddc7368a9c8"
 )
-REGISTRY_IMAGE = (
-    "registry@sha256:"
-    "a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -54,7 +50,7 @@ def _container(
 ):
     client = docker.from_env()
     registry = client.containers.run(
-        image=REGISTRY_IMAGE,
+        image="registry:2",
         ports={5000: None},
         auto_remove=True,
         detach=True,
@@ -129,6 +125,18 @@ def _container(
             try:
                 yield container
             finally:
+                # Surface the shim's own startup output. When the server
+                # "disconnects without sending a response" the cause is an
+                # exception during uvicorn/lifespan startup, which is logged
+                # by the container before the socket stops responding.
+                container.reload()
+                logs = container.logs().decode("utf-8", errors="replace")
+                print(
+                    f"\n----- shim container {new_tag} "
+                    f"(status={container.status}) logs -----\n{logs}\n"
+                    f"----- end shim container logs -----",
+                    file=sys.stderr,
+                )
                 container.stop(timeout=0)
     finally:
         registry.stop(timeout=0)

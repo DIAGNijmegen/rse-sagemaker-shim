@@ -57,12 +57,16 @@ def local_s3_container():
     }
 
     docker_client = docker.from_env()
+    # Pinned by digest for reproducibility (see test_container_image.py).
+    # Pull explicitly because containers.run does not reliably pull a
+    # digest reference that is not already present locally.
+    seaweedfs_image = (
+        "chrislusf/seaweedfs@sha256:"
+        "c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860"
+    )
+    docker_client.images.pull(seaweedfs_image)
     local_s3 = docker_client.containers.run(
-        # Pinned by digest for reproducibility (see test_container_image.py).
-        image=(
-            "chrislusf/seaweedfs@sha256:"
-            "c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860"
-        ),
+        image=seaweedfs_image,
         command="mini",
         ports={8333: None},
         auto_remove=True,
