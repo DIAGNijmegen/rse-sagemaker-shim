@@ -120,6 +120,25 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
                     container.logs().decode("utf-8", errors="replace"),
                     file=sys.stderr,
                 )
+                # The container logs above are empty when the staticx
+                # bootloader fails before Python starts. Exec the binary
+                # directly with the bootloader debug flag so we can see the
+                # actual extraction / exec error and the exit code. Use
+                # --help (not serve) so the bootloader + full Python startup
+                # runs but returns immediately instead of blocking.
+                exit_code, output = container.exec_run(
+                    cmd=["/sagemaker-shim", "--help"],
+                    environment={"STATICX_DEBUG": "1"},
+                    demux=False,
+                )
+                print(
+                    f"\n===== direct exec exit_code={exit_code} =====",
+                    file=sys.stderr,
+                )
+                print(
+                    output.decode("utf-8", errors="replace"),
+                    file=sys.stderr,
+                )
                 container.stop(timeout=0)
     finally:
         registry.stop(timeout=0)
