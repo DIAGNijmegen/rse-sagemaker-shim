@@ -46,6 +46,30 @@ class LocalS3(NamedTuple):
     env: dict[str, str]
 
 
+def _container_endpoint(*, container: Container, container_port: int) -> str:
+    """Return a URL that reaches a port inside the container.
+
+    On Linux the container's bridge IP is routable from the host, and the
+    GitHub-hosted runners stopped reliably forwarding published ports
+    (host connections are accepted then closed without a response), so we
+    talk to the container directly on its bridge IP. Elsewhere (e.g. macOS
+    with Docker Desktop) the bridge IP is not routable from the host, so we
+    use the published port on localhost.
+    """
+    if sys.platform == "linux":
+        networks = container.attrs["NetworkSettings"]["Networks"]
+        container_ip = next(
+            (n["IPAddress"] for n in networks.values() if n["IPAddress"]),
+            "",
+        )
+        if not container_ip:
+            raise RuntimeError("Container has no bridge IP address")
+        return f"http://{container_ip}:{container_port}"
+
+    host_port = container.ports[f"{container_port}/tcp"][0]["HostPort"]
+    return f"http://localhost:{host_port}"
+
+
 @contextmanager
 def local_s3_container():
     input_bucket_name = "test-inputs"
@@ -78,15 +102,17 @@ def local_s3_container():
     # Wait for startup
     sleep(1)
 
+    mpatch = pytest.MonkeyPatch()
     try:
         local_s3.reload()  # required to get ports
         port = local_s3.ports["8333/tcp"][0]["HostPort"]
 
-        s3_endpoint_url = f"http://localhost:{port}"
+        s3_endpoint_url = _container_endpoint(
+            container=local_s3, container_port=8333
+        )
 
         environment["AWS_S3_ENDPOINT_URL"] = s3_endpoint_url
 
-        mpatch = pytest.MonkeyPatch()
         for key, value in environment.items():
             mpatch.setenv(key, value)
 

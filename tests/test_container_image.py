@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from tests import __version__
-from tests.conftest import local_s3_container
+from tests.conftest import _container_endpoint, local_s3_container
 from tests.utils import (
     encode_b64j,
     get_image_config,
@@ -122,37 +122,21 @@ def _container(
             # Wait for startup
             sleep(5)
 
+            container.reload()
+            base_url = _container_endpoint(
+                container=container, container_port=8080
+            )
+
             try:
-                yield container
+                yield base_url
             finally:
-                # Surface the shim's own startup output, and probe the
-                # server directly on the container's bridge IP (bypassing
-                # Docker's published-port forwarding). If the direct-IP
-                # request succeeds while the host published-port request
-                # failed with "Server disconnected", the fault is in
-                # Docker's host->container port forwarding, not the shim.
+                # Surface the shim's own startup output to make any
+                # uvicorn/lifespan startup failure visible.
                 container.reload()
                 logs = container.logs().decode("utf-8", errors="replace")
-                networks = container.attrs["NetworkSettings"]["Networks"]
-                container_ip = next(
-                    (n["IPAddress"] for n in networks.values()), ""
-                )
-                port_bindings = container.attrs["NetworkSettings"]["Ports"]
-                try:
-                    direct = httpx.get(
-                        f"http://{container_ip}:8080/execution-parameters",
-                        timeout=10,
-                    )
-                    probe = (
-                        f"direct-IP probe {container_ip}: {direct.status_code}"
-                    )
-                except Exception as error:  # noqa: BLE001
-                    probe = f"direct-IP probe {container_ip} raised: {error!r}"
                 print(
                     f"\n----- shim container {new_tag} "
                     f"(status={container.status}) logs -----\n{logs}\n"
-                    f"ports={port_bindings}\n"
-                    f"{probe}\n"
                     f"----- end shim container logs -----",
                     file=sys.stderr,
                 )
@@ -163,16 +147,16 @@ def _container(
 
 @pytest.fixture(scope="session")
 def container():
-    with _container() as c:
-        yield c
+    with _container() as base_url:
+        yield base_url
 
 
 @pytest.mark.container
 @pytest.mark.skipif(
     sys.platform != "linux", reason="does not run outside linux"
 )
-def test_container_responds_to_ping():
-    response = httpx.get("http://localhost:8080/ping", timeout=30)
+def test_container_responds_to_ping(container):
+    response = httpx.get(f"{container}/ping", timeout=30)
 
     # SageMaker waits for an HTTP 200 status code and an empty body
     # for a successful ping request before sending an invocations request.
@@ -184,10 +168,8 @@ def test_container_responds_to_ping():
 @pytest.mark.skipif(
     sys.platform != "linux", reason="does not run outside linux"
 )
-def test_container_responds_to_execution_parameters():
-    response = httpx.get(
-        "http://localhost:8080/execution-parameters", timeout=30
-    )
+def test_container_responds_to_execution_parameters(container):
+    response = httpx.get(f"{container}/execution-parameters", timeout=30)
 
     assert response.json() == {
         "MaxConcurrentTransforms": 1,
@@ -200,7 +182,7 @@ def test_container_responds_to_execution_parameters():
 @pytest.mark.skipif(
     sys.platform != "linux", reason="does not run outside linux"
 )
-def test_invocations_endpoint(local_s3):
+def test_invocations_endpoint(local_s3, container):
     # To receive inference requests, the container must have a web server
     # listening on port 8080 and must accept POST requests to the
     # /invocations endpoint.
@@ -212,9 +194,7 @@ def test_invocations_endpoint(local_s3):
         "output_prefix": f"test/{pk}",
         "timeout": "PT10S",
     }
-    response = httpx.post(
-        "http://localhost:8080/invocations", json=data, timeout=30
-    )
+    response = httpx.post(f"{container}/invocations", json=data, timeout=30)
 
     # To obtain inferences, Amazon SageMaker sends a POST request to the
     # inference container. The POST request body contains data from
@@ -234,13 +214,12 @@ def test_invocations_endpoint(local_s3):
 )
 def test_alpine_image(local_s3):
     # https://github.com/JonathonReinhart/staticx/issues/143
-    host_port = 8081
     with _container(
         base_image=ALPINE_IMAGE,
         local_name="python-alpine",
-        host_port=host_port,
+        host_port=8081,
         cmd=["python", "-c", "print('hello_world')"],
-    ):
+    ) as base_url:
         pk = str(uuid4())
         data = {
             "pk": pk,
@@ -249,9 +228,7 @@ def test_alpine_image(local_s3):
             "output_prefix": f"test/{pk}",
             "timeout": "PT10S",
         }
-        response = httpx.post(
-            f"http://localhost:{host_port}/invocations", json=data, timeout=30
-        )
+        response = httpx.post(f"{base_url}/invocations", json=data, timeout=30)
 
         response = response.json()
 
