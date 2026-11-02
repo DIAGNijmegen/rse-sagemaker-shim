@@ -125,15 +125,34 @@ def _container(
             try:
                 yield container
             finally:
-                # Surface the shim's own startup output. When the server
-                # "disconnects without sending a response" the cause is an
-                # exception during uvicorn/lifespan startup, which is logged
-                # by the container before the socket stops responding.
+                # Surface the shim's own startup output, and probe the
+                # server directly on the container's bridge IP (bypassing
+                # Docker's published-port forwarding). If the direct-IP
+                # request succeeds while the host published-port request
+                # failed with "Server disconnected", the fault is in
+                # Docker's host->container port forwarding, not the shim.
                 container.reload()
                 logs = container.logs().decode("utf-8", errors="replace")
+                networks = container.attrs["NetworkSettings"]["Networks"]
+                container_ip = next(
+                    (n["IPAddress"] for n in networks.values()), ""
+                )
+                port_bindings = container.attrs["NetworkSettings"]["Ports"]
+                try:
+                    direct = httpx.get(
+                        f"http://{container_ip}:8080/execution-parameters",
+                        timeout=10,
+                    )
+                    probe = (
+                        f"direct-IP probe {container_ip}: {direct.status_code}"
+                    )
+                except Exception as error:  # noqa: BLE001
+                    probe = f"direct-IP probe {container_ip} raised: {error!r}"
                 print(
                     f"\n----- shim container {new_tag} "
                     f"(status={container.status}) logs -----\n{logs}\n"
+                    f"ports={port_bindings}\n"
+                    f"{probe}\n"
                     f"----- end shim container logs -----",
                     file=sys.stderr,
                 )
