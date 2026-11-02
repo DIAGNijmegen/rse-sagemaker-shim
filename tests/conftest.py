@@ -62,12 +62,16 @@ def container_endpoint(*, container: Container, container_port: int) -> str:
             (n["IPAddress"] for n in networks.values() if n["IPAddress"]),
             "",
         )
+
         if not container_ip:
             raise RuntimeError("Container has no bridge IP address")
-        return f"http://{container_ip}:{container_port}"
 
-    host_port = container.ports[f"{container_port}/tcp"][0]["HostPort"]
-    return f"http://localhost:{host_port}"
+        endpoint = f"http://{container_ip}:{container_port}"
+    else:
+        host_port = container.ports[f"{container_port}/tcp"][0]["HostPort"]
+        endpoint = f"http://localhost:{host_port}"
+
+    return endpoint
 
 
 @contextmanager
