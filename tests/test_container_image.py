@@ -108,6 +108,18 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
             try:
                 yield container
             finally:
+                # Dump the container logs so that if the shim crashed on
+                # startup (symptom: httpx.RemoteProtocolError "Server
+                # disconnected without sending a response") we can see why.
+                container.reload()
+                print(
+                    f"\n===== {new_tag} status={container.status} =====",
+                    file=sys.stderr,
+                )
+                print(
+                    container.logs().decode("utf-8", errors="replace"),
+                    file=sys.stderr,
+                )
                 container.stop(timeout=0)
     finally:
         registry.stop(timeout=0)
