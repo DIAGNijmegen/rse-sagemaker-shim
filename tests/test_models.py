@@ -502,7 +502,7 @@ def test_reset_linked_input(tmp_path, monkeypatch):
         output_prefix="test",
         timeout=timedelta(),
     )
-    t.reset_io()
+    t.reset_io(user_process=None)
 
     expected_input_directory = linked_input_parent / "test-input"
 
@@ -1102,47 +1102,10 @@ async def test_invoke_returns_0_on_201(mocker, monkeypatch):
                 UserSafeError, match="HTTP error calling invoke endpoint"
             ),
         ),
-        (
-            {"return_value": httpx.Response(100)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 100, expected 201",
-            ),
-        ),
-        (
-            {"return_value": httpx.Response(200)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 200, expected 201",
-            ),
-        ),
-        (
-            {"return_value": httpx.Response(300)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 300, expected 201",
-            ),
-        ),
-        (
-            {"return_value": httpx.Response(400)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 400, expected 201",
-            ),
-        ),
-        (
-            {"return_value": httpx.Response(500)},
-            pytest.raises(
-                UserSafeError,
-                match="Invoke endpoint returned status 500, expected 201",
-            ),
-        ),
     ],
 )
 @pytest.mark.asyncio
-async def test_invoke_raises_on_non_201(
-    mocker, monkeypatch, client_kwargs, expectation
-):
+async def test_invoke_raises(mocker, monkeypatch, client_kwargs, expectation):
     mocker.patch(
         "sagemaker_shim.models.httpx.AsyncClient.post",
         **client_kwargs,
@@ -1166,7 +1129,7 @@ async def test_invoke_result_duration(local_s3, mocker, monkeypatch):
         inputs=[],
         output_bucket_name=local_s3.output_bucket_name,
         output_prefix=f"tasks/{pk}",
-        timeout=timedelta(seconds=1),
+        timeout=timedelta(seconds=2),
     )
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
@@ -1268,3 +1231,165 @@ async def test_user_process_last_stderr_lines(
         '{"log": "My Custom Error", "level": "WARNING", "source": "stderr", '
         f'"internal": false, "task": "{pk}"}}\n' in captured.err
     )
+
+
+@pytest.mark.asyncio
+async def test_user_process_last_stderr_lines_invoke(
+    local_s3, mocker, monkeypatch, capsys
+):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.get",
+        return_value=httpx.Response(200),
+    )
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.post",
+        return_value=httpx.Response(500),
+    )
+    cmd = [
+        "bash",
+        "-c",
+        'echo "My Custom Error" >&2 && exit 1',
+    ]
+    pk = str(uuid4())
+    prefix = f"tasks/{pk}"
+    process = UserProcess()
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=local_s3.output_bucket_name,
+        output_prefix=str(prefix),
+        timeout=timedelta(seconds=2),
+    )
+
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=cmd),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "invoke",
+    )
+
+    logging.config.dictConfig(LOGGING_CONFIG)
+
+    async with get_s3_resources() as s3_resources:
+        await process.setup()
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
+
+    assert result.return_code == 1
+    assert result.user_safe_error_message == ""
+    assert result.user_process_last_stderr_lines == ["My Custom Error\n"]
+
+    captured = capsys.readouterr()
+    assert "My Custom Error" in captured.out
+    assert (
+        '{"log": "My Custom Error", "level": "WARNING", "source": "stderr", '
+        f'"internal": false, "task": "{pk}"}}\n' in captured.err
+    )
+
+
+@pytest.mark.parametrize("api_method", ("exec", "invoke"))
+@pytest.mark.asyncio
+async def test_user_process_healthy_after_setup(
+    mocker, monkeypatch, api_method
+):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.get",
+        return_value=httpx.Response(200),
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["echo", "hello"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        api_method,
+    )
+    p = UserProcess()
+
+    assert not p.healthy
+
+    await p.setup()
+
+    assert p.healthy
+
+
+@pytest.mark.asyncio
+async def test_user_process_unhealthy_after_inference_timeout(
+    local_s3, monkeypatch
+):
+    process = UserProcess()
+    process._healthy = True
+    pk = str(uuid4())
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=local_s3.output_bucket_name,
+        output_prefix=f"tasks/{pk}",
+        timeout=timedelta(seconds=1),
+    )
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
+        encode_b64j(val=["sleep", "2"]),
+    )
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_USE_LINKED_INPUT", "False")
+    monkeypatch.setenv("GRAND_CHALLENGE_COMPONENT_SET_EXTRA_GROUPS", "False")
+    monkeypatch.setenv(
+        "GRAND_CHALLENGE_COMPONENT_API_METHOD",
+        "exec",
+    )
+
+    async with get_s3_resources() as s3_resources:
+        result = await task.run_inference(
+            user_process=process, s3_resources=s3_resources
+        )
+
+    assert result.return_code == 1
+    assert result.user_safe_error_message == "Time limit exceeded"
+    assert not process.healthy
+
+
+@pytest.mark.asyncio
+async def test_user_process_unhealthy_after_invoke_timeout(mocker):
+    mocker.patch(
+        "sagemaker_shim.models.httpx.AsyncClient.post",
+        side_effect=httpx.TimeoutException("error"),
+    )
+    process = UserProcess()
+    process._healthy = True
+
+    with pytest.raises(UserSafeError, match="Invoke time limit exceeded"):
+        await process.invoke(timeout=timedelta(seconds=1))
+
+    assert not process.healthy
+
+
+@pytest.mark.asyncio
+async def test_user_process_unhealthy_after_reset_io_failure(
+    local_s3, monkeypatch
+):
+    process = UserProcess()
+    process._healthy = True
+    pk = str(uuid4())
+    task = InferenceTask(
+        pk=pk,
+        inputs=[],
+        output_bucket_name=local_s3.output_bucket_name,
+        output_prefix=f"tasks/{pk}",
+        timeout=timedelta(seconds=1),
+    )
+
+    assert process.healthy, "Sanity check"
+
+    with pytest.raises(
+        UserSafeError,
+        match="The containers input and output directories could not be reset",
+    ):
+        await task.reset_io(user_process=process)
+
+    assert not process.healthy

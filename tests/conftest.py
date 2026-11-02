@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import subprocess
 import sys
@@ -6,7 +7,7 @@ from pathlib import Path
 from time import sleep
 from typing import NamedTuple
 
-import boto3
+import aioboto3
 import docker
 import pytest
 from docker.models.containers import Container
@@ -32,6 +33,7 @@ def pytest_sessionstart(session):
 @pytest.fixture
 def client():
     sagemaker_shim.app.USER_PROCESS = UserProcess()
+    sagemaker_shim.app.USER_PROCESS._healthy = True
 
     return TestClient(app=sagemaker_shim.app.app)
 
@@ -42,6 +44,34 @@ class LocalS3(NamedTuple):
     container: Container
     port: int
     env: dict[str, str]
+
+
+def container_endpoint(*, container: Container, container_port: int) -> str:
+    """Return a URL that reaches a port inside the container.
+
+    The GitHub-hosted runners stopped reliably forwarding published
+    container ports (host connections are accepted then closed without a
+    response), so on Linux we talk to the container directly on its bridge
+    IP, which is routable from the host. Elsewhere (e.g. macOS with Docker
+    Desktop) the bridge IP is not routable, so we use the published port on
+    localhost.
+    """
+    if sys.platform == "linux":
+        networks = container.attrs["NetworkSettings"]["Networks"]
+        container_ip = next(
+            (n["IPAddress"] for n in networks.values() if n["IPAddress"]),
+            "",
+        )
+
+        if not container_ip:
+            raise RuntimeError("Container has no bridge IP address")
+
+        endpoint = f"http://{container_ip}:{container_port}"
+    else:
+        host_port = container.ports[f"{container_port}/tcp"][0]["HostPort"]
+        endpoint = f"http://localhost:{host_port}"
+
+    return endpoint
 
 
 @contextmanager
@@ -72,7 +102,9 @@ def local_s3_container():
         local_s3.reload()  # required to get ports
         port = local_s3.ports["8333/tcp"][0]["HostPort"]
 
-        s3_endpoint_url = f"http://localhost:{port}"
+        s3_endpoint_url = container_endpoint(
+            container=local_s3, container_port=8333
+        )
 
         environment["AWS_S3_ENDPOINT_URL"] = s3_endpoint_url
 
@@ -80,10 +112,15 @@ def local_s3_container():
         for key, value in environment.items():
             mpatch.setenv(key, value)
 
-        s3_client = boto3.client("s3", endpoint_url=s3_endpoint_url)
+        async def create_buckets() -> None:
+            session = aioboto3.Session()
+            async with session.client(
+                "s3", endpoint_url=s3_endpoint_url
+            ) as s3_client:
+                for bucket_name in {input_bucket_name, output_bucket_name}:
+                    await s3_client.create_bucket(Bucket=bucket_name)
 
-        for bucket_name in {input_bucket_name, output_bucket_name}:
-            s3_client.create_bucket(Bucket=bucket_name)
+        asyncio.run(create_buckets())
 
         yield LocalS3(
             input_bucket_name=input_bucket_name,

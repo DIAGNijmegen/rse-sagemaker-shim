@@ -366,7 +366,7 @@ async def download_and_extract_tarball(
         try:
             with ProcUserTarfile.open(fileobj=f, mode="r") as tar:
                 tar.extractall(path=dest, filter="data")
-        except (tarfile.TarError, FileNotFoundError) as error:
+        except Exception as error:
             logger.error(error, exc_info=True)
             raise UserSafeError("Tarfile could not be extracted") from error
 
@@ -595,6 +595,7 @@ def log_external(*, level: int, msg: str, task_pk: str | None) -> None:
 
 class UserProcess(ProcUserMixin):
     def __init__(self) -> None:
+        self._healthy: bool = False
         self._process: asyncio.subprocess.Process | None = None
         self._stdout_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
@@ -610,6 +611,13 @@ class UserProcess(ProcUserMixin):
             return json.loads(
                 b64decode(encoded.encode("utf-8")).decode("utf-8")
             )
+
+    @property
+    def healthy(self) -> bool:
+        return self._healthy
+
+    def mark_unhealthy(self) -> None:
+        self._healthy = False
 
     @property
     def process(self) -> asyncio.subprocess.Process:
@@ -774,6 +782,7 @@ class UserProcess(ProcUserMixin):
 
     async def setup(self) -> None:
         if self.api_method == APIMethod.EXEC:
+            self._healthy = True
             return
         elif self.api_method == APIMethod.INVOKE:
             logger.info("Setting up user process for invoke mode")
@@ -843,6 +852,7 @@ class UserProcess(ProcUserMixin):
 
     async def run_inference(self, *, task: "InferenceTask") -> int:
         self._current_task_pk = task.pk
+
         if self.api_method == APIMethod.EXEC:
             return await self.execute()
         elif self.api_method == APIMethod.INVOKE:
@@ -946,6 +956,8 @@ class UserProcess(ProcUserMixin):
             await self.health_check()
         except UserSafeError as error:
             raise UserSafeError(f"Health check failed: {error}") from error
+        else:
+            self._healthy = True
 
     @staticmethod
     async def _cancel_tasks(*, tasks: Iterable[asyncio.Task[None]]) -> None:
@@ -1079,6 +1091,7 @@ class UserProcess(ProcUserMixin):
                     timeout=timeout.total_seconds(),
                 )
             except httpx.TimeoutException as error:
+                self.mark_unhealthy()
                 raise UserSafeError("Invoke time limit exceeded") from error
             except httpx.ConnectError as error:
                 raise UserSafeError(
@@ -1090,12 +1103,22 @@ class UserProcess(ProcUserMixin):
                 ) from error
 
             if response.status_code == 201:
-                return 0
+                return_code = 0
             else:
-                raise UserSafeError(
+                logger.error(
                     f"Invoke endpoint returned status {response.status_code}, "
                     f"expected 201"
                 )
+                return_code = 1
+
+            # there may be stderr data still in the kernel pipe buffer that
+            # hasn't been delivered to the StreamReader yet. A real
+            # sleep (not just a yield) is needed so the event loop runs
+            # its I/O selector, transfers pipe data into the stream
+            # reader, and lets the stderr task consume it.
+            await asyncio.sleep(1)
+
+            return return_code
 
 
 class InferenceTask(BaseModel):
@@ -1204,7 +1227,7 @@ class InferenceTask(BaseModel):
         self, *, user_process: UserProcess, s3_resources: S3Resources
     ) -> InferenceResult:
         try:
-            self.reset_io()
+            self.reset_io(user_process=user_process)
 
             await self.download_input(s3_resources=s3_resources)
 
@@ -1217,6 +1240,7 @@ class InferenceTask(BaseModel):
                     timeout=self.timeout.total_seconds(),
                 )
             except TimeoutError:
+                user_process.mark_unhealthy()
                 user_safe_error_message = "Time limit exceeded"
                 log_external(
                     level=logging.ERROR,
@@ -1252,9 +1276,9 @@ class InferenceTask(BaseModel):
                 ),
             )
         finally:
-            self.reset_io()
+            self.reset_io(user_process=user_process)
 
-    def reset_io(self) -> None:
+    def reset_io(self, user_process: UserProcess) -> None:
         """Resets the input and output directories"""
         try:
             clean_path(path=self.input_path)
@@ -1262,6 +1286,7 @@ class InferenceTask(BaseModel):
             self.reset_linked_input()
         except Exception as error:
             logger.error(error, exc_info=True)
+            user_process.mark_unhealthy()
             raise UserSafeError(
                 "The containers input and output directories could not be reset"
             ) from error
