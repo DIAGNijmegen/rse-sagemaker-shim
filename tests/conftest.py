@@ -10,6 +10,7 @@ from typing import NamedTuple
 import aioboto3
 import docker
 import pytest
+from botocore.exceptions import EndpointConnectionError
 from docker.models.containers import Container
 from fastapi.testclient import TestClient
 
@@ -74,6 +75,51 @@ def container_endpoint(*, container: Container, container_port: int) -> str:
     return endpoint
 
 
+def _resolve_endpoint_when_ready(
+    *, container: Container, container_port: int, attempts: int = 30
+) -> str:
+    """Reload until Docker has assigned networking, then return the URL."""
+    for _ in range(attempts):
+        container.reload()
+        try:
+            return container_endpoint(
+                container=container, container_port=container_port
+            )
+        except (KeyError, IndexError, RuntimeError):
+            sleep(1)
+    raise RuntimeError("Container networking did not become ready")
+
+
+def _create_buckets_when_ready(
+    *, endpoint_url: str, bucket_names: set[str], attempts: int = 60
+) -> None:
+    """Create the buckets, retrying until the S3 endpoint is serving.
+
+    Creating the buckets doubles as the readiness check, so no fixed sleep
+    is needed.
+    """
+
+    async def create_buckets() -> None:
+        session = aioboto3.Session()
+        async with session.client(
+            "s3", endpoint_url=endpoint_url
+        ) as s3_client:
+            for bucket_name in bucket_names:
+                await s3_client.create_bucket(Bucket=bucket_name)
+
+    last_error: Exception | None = None
+    for _ in range(attempts):
+        try:
+            asyncio.run(create_buckets())
+            return
+        except EndpointConnectionError as error:
+            last_error = error
+            sleep(1)
+    raise RuntimeError(
+        f"S3 endpoint {endpoint_url} did not start in time"
+    ) from last_error
+
+
 @contextmanager
 def local_s3_container():
     input_bucket_name = "test-inputs"
@@ -95,32 +141,22 @@ def local_s3_container():
         environment=environment,
     )
 
-    # Wait for startup
-    sleep(1)
-
+    mpatch = pytest.MonkeyPatch()
     try:
-        local_s3.reload()  # required to get ports
-        port = local_s3.ports["8333/tcp"][0]["HostPort"]
-
-        s3_endpoint_url = container_endpoint(
+        s3_endpoint_url = _resolve_endpoint_when_ready(
             container=local_s3, container_port=8333
         )
+        port = local_s3.ports["8333/tcp"][0]["HostPort"]
 
         environment["AWS_S3_ENDPOINT_URL"] = s3_endpoint_url
 
-        mpatch = pytest.MonkeyPatch()
         for key, value in environment.items():
             mpatch.setenv(key, value)
 
-        async def create_buckets() -> None:
-            session = aioboto3.Session()
-            async with session.client(
-                "s3", endpoint_url=s3_endpoint_url
-            ) as s3_client:
-                for bucket_name in {input_bucket_name, output_bucket_name}:
-                    await s3_client.create_bucket(Bucket=bucket_name)
-
-        asyncio.run(create_buckets())
+        _create_buckets_when_ready(
+            endpoint_url=s3_endpoint_url,
+            bucket_names={input_bucket_name, output_bucket_name},
+        )
 
         yield LocalS3(
             input_bucket_name=input_bucket_name,
