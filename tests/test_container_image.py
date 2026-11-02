@@ -23,10 +23,8 @@ from tests.utils import (
 # Tests for compatability with
 # https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-batch-code.html
 
-# Base images are pinned by digest. Docker Hub rolls the mutable tags
-# (ubuntu:latest, python:3.12-alpine, registry:2) forward over time, and an
-# unpinned roll is what broke CI (the staticx binary stopped running inside a
-# freshly rolled base image). Pinning makes the container tests reproducible.
+# Base images are pinned by digest so the container tests do not depend on
+# whatever Docker Hub is currently serving for the mutable tags.
 UBUNTU_IMAGE = (
     "ubuntu@sha256:"
     "6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
@@ -35,6 +33,33 @@ ALPINE_IMAGE = (
     "python@sha256:"
     "e6dae589c1c05976188fd3bd019afd091445fc533ed2ea29001beddc7368a9c8"
 )
+
+
+def _wait_until_serving(
+    *, base_url: str, attempts: int = 60, delay_seconds: float = 1.0
+) -> None:
+    """Poll until the shim server answers, or raise after the timeout.
+
+    Uses /execution-parameters because it does not depend on the user
+    process being healthy. A server with a FastAPI lifespan does not accept
+    connections until startup has completed, so a successful response means
+    the container is fully ready.
+    """
+    last_error = ""
+    for _ in range(attempts):
+        try:
+            response = httpx.get(f"{base_url}/execution-parameters", timeout=5)
+            if response.status_code == 200:
+                return
+            last_error = f"status {response.status_code}"
+        except httpx.HTTPError as error:
+            last_error = repr(error)
+        sleep(delay_seconds)
+
+    raise RuntimeError(
+        f"Shim server at {base_url} did not start within "
+        f"{attempts * delay_seconds:.0f}s (last error: {last_error})"
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -119,15 +144,19 @@ def _container(
                 user=0,
             )
 
-            # Wait for startup
-            sleep(5)
-
             container.reload()
             base_url = _container_endpoint(
                 container=container, container_port=8080
             )
 
             try:
+                # Poll until the server is actually serving instead of using
+                # a fixed sleep. The alpine (musl) build extracts and starts
+                # more slowly (see staticx issue #143), so a fixed wait is
+                # racy: the server may not be listening yet, which surfaces
+                # as "Connection refused".
+                _wait_until_serving(base_url=base_url)
+
                 yield base_url
             finally:
                 # Surface the shim's own startup output to make any
