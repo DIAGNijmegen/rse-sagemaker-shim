@@ -23,6 +23,23 @@ from tests.utils import (
 # Tests for compatability with
 # https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-batch-code.html
 
+# Base images are pinned by digest. Docker Hub rolls the mutable tags
+# (ubuntu:latest, python:3.12-alpine, registry:2) forward over time, and an
+# unpinned roll is what broke CI (the staticx binary stopped running inside a
+# freshly rolled base image). Pinning makes the container tests reproducible.
+UBUNTU_IMAGE = (
+    "ubuntu@sha256:"
+    "6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
+)
+ALPINE_IMAGE = (
+    "python@sha256:"
+    "e6dae589c1c05976188fd3bd019afd091445fc533ed2ea29001beddc7368a9c8"
+)
+REGISTRY_IMAGE = (
+    "registry@sha256:"
+    "a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+)
+
 
 @pytest.fixture(autouse=True)
 def _container_helper(request) -> None:
@@ -32,10 +49,12 @@ def _container_helper(request) -> None:
 
 
 @contextmanager
-def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
+def _container(
+    *, base_image=UBUNTU_IMAGE, local_name="base", host_port=8080, cmd=None
+):
     client = docker.from_env()
     registry = client.containers.run(
-        image="registry:2",
+        image=REGISTRY_IMAGE,
         ports={5000: None},
         auto_remove=True,
         detach=True,
@@ -48,7 +67,9 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
         registry.reload()  # required to get ports
         port = registry.ports["5000/tcp"][0]["HostPort"]
         repo = f"localhost:{port}"
-        repo_tag = f"{repo}/{base_image}"
+        # base_image may be a digest reference (name@sha256:...), which
+        # cannot be used as a local registry tag, so use a plain local name.
+        repo_tag = f"{repo}/{local_name}:latest"
 
         # Pull the base image
         container_image = client.images.pull(base_image)
@@ -108,37 +129,6 @@ def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
             try:
                 yield container
             finally:
-                # Dump the container logs so that if the shim crashed on
-                # startup (symptom: httpx.RemoteProtocolError "Server
-                # disconnected without sending a response") we can see why.
-                container.reload()
-                print(
-                    f"\n===== {new_tag} status={container.status} =====",
-                    file=sys.stderr,
-                )
-                print(
-                    container.logs().decode("utf-8", errors="replace"),
-                    file=sys.stderr,
-                )
-                # The container logs above are empty when the staticx
-                # bootloader fails before Python starts. Exec the binary
-                # directly with the bootloader debug flag so we can see the
-                # actual extraction / exec error and the exit code. Use
-                # --help (not serve) so the bootloader + full Python startup
-                # runs but returns immediately instead of blocking.
-                exit_code, output = container.exec_run(
-                    cmd=["/sagemaker-shim", "--help"],
-                    environment={"STATICX_DEBUG": "1"},
-                    demux=False,
-                )
-                print(
-                    f"\n===== direct exec exit_code={exit_code} =====",
-                    file=sys.stderr,
-                )
-                print(
-                    output.decode("utf-8", errors="replace"),
-                    file=sys.stderr,
-                )
                 container.stop(timeout=0)
     finally:
         registry.stop(timeout=0)
@@ -219,7 +209,8 @@ def test_alpine_image(local_s3):
     # https://github.com/JonathonReinhart/staticx/issues/143
     host_port = 8081
     with _container(
-        base_image="python:3.12-alpine",
+        base_image=ALPINE_IMAGE,
+        local_name="python-alpine",
         host_port=host_port,
         cmd=["python", "-c", "print('hello_world')"],
     ):

@@ -58,7 +58,11 @@ def local_s3_container():
 
     docker_client = docker.from_env()
     local_s3 = docker_client.containers.run(
-        image="chrislusf/seaweedfs",
+        # Pinned by digest for reproducibility (see test_container_image.py).
+        image=(
+            "chrislusf/seaweedfs@sha256:"
+            "c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860"
+        ),
         command="mini",
         ports={8333: None},
         auto_remove=True,
