@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from tests import __version__
-from tests.conftest import _container_endpoint, local_s3_container
+from tests.conftest import container_endpoint, local_s3_container
 from tests.utils import (
     encode_b64j,
     get_image_config,
@@ -23,27 +23,17 @@ from tests.utils import (
 # Tests for compatability with
 # https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-batch-code.html
 
-# Base images are pinned by digest so the container tests do not depend on
-# whatever Docker Hub is currently serving for the mutable tags.
-UBUNTU_IMAGE = (
-    "ubuntu@sha256:"
-    "6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
-)
-ALPINE_IMAGE = (
-    "python@sha256:"
-    "e6dae589c1c05976188fd3bd019afd091445fc533ed2ea29001beddc7368a9c8"
-)
-
 
 def _wait_until_serving(
     *, base_url: str, attempts: int = 60, delay_seconds: float = 1.0
 ) -> None:
     """Poll until the shim server answers, or raise after the timeout.
 
-    Uses /execution-parameters because it does not depend on the user
-    process being healthy. A server with a FastAPI lifespan does not accept
-    connections until startup has completed, so a successful response means
-    the container is fully ready.
+    The alpine (musl) build extracts and starts more slowly (see staticx
+    issue #143), so a fixed sleep is racy. /execution-parameters is used as
+    the probe because it does not depend on the user process being healthy,
+    and a FastAPI lifespan server does not accept connections until startup
+    has completed, so a 200 means the container is fully ready.
     """
     last_error = ""
     for _ in range(attempts):
@@ -70,9 +60,7 @@ def _container_helper(request) -> None:
 
 
 @contextmanager
-def _container(
-    *, base_image=UBUNTU_IMAGE, local_name="base", host_port=8080, cmd=None
-):
+def _container(*, base_image="ubuntu:latest", host_port=8080, cmd=None):
     client = docker.from_env()
     registry = client.containers.run(
         image="registry:2",
@@ -88,9 +76,7 @@ def _container(
         registry.reload()  # required to get ports
         port = registry.ports["5000/tcp"][0]["HostPort"]
         repo = f"localhost:{port}"
-        # base_image may be a digest reference (name@sha256:...), which
-        # cannot be used as a local registry tag, so use a plain local name.
-        repo_tag = f"{repo}/{local_name}:latest"
+        repo_tag = f"{repo}/{base_image}"
 
         # Pull the base image
         container_image = client.images.pull(base_image)
@@ -145,30 +131,14 @@ def _container(
             )
 
             container.reload()
-            base_url = _container_endpoint(
+            base_url = container_endpoint(
                 container=container, container_port=8080
             )
 
             try:
-                # Poll until the server is actually serving instead of using
-                # a fixed sleep. The alpine (musl) build extracts and starts
-                # more slowly (see staticx issue #143), so a fixed wait is
-                # racy: the server may not be listening yet, which surfaces
-                # as "Connection refused".
                 _wait_until_serving(base_url=base_url)
-
                 yield base_url
             finally:
-                # Surface the shim's own startup output to make any
-                # uvicorn/lifespan startup failure visible.
-                container.reload()
-                logs = container.logs().decode("utf-8", errors="replace")
-                print(
-                    f"\n----- shim container {new_tag} "
-                    f"(status={container.status}) logs -----\n{logs}\n"
-                    f"----- end shim container logs -----",
-                    file=sys.stderr,
-                )
                 container.stop(timeout=0)
     finally:
         registry.stop(timeout=0)
@@ -244,8 +214,7 @@ def test_invocations_endpoint(local_s3, container):
 def test_alpine_image(local_s3):
     # https://github.com/JonathonReinhart/staticx/issues/143
     with _container(
-        base_image=ALPINE_IMAGE,
-        local_name="python-alpine",
+        base_image="python:3.12-alpine",
         host_port=8081,
         cmd=["python", "-c", "print('hello_world')"],
     ) as base_url:

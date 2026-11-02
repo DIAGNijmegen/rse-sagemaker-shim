@@ -1,4 +1,4 @@
-FROM python@sha256:17b9724493d916f56565c131f389faff2597f46dec6ce09516f95125bc9f519f
+FROM python:3.12
 
 RUN mkdir -p /opt/src/dist
 
