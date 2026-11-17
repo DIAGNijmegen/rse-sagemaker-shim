@@ -41,6 +41,7 @@ dev = [
     "pytest-asyncio",
     "types-aioboto3[s3]",
     "types-aiofiles",
+    "httpx2",  # Required for starlette.testclient
 ]
 
 [tool.uv]
