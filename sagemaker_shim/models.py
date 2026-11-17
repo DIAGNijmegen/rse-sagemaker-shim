@@ -48,8 +48,6 @@ else:
 logger = logging.getLogger(__name__)
 lock = asyncio.Lock()
 
-REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
-
 BUCKET_NAME_REGEX = re.compile(r"^[a-zA-Z0-9.\-_]{1,255}$")
 BUCKET_ARN_REGEX = re.compile(
     r"^arn:(aws).*:(s3|s3-object-lambda):[a-z\-0-9]*:[0-9]{12}:accesspoint[/:][a-zA-Z0-9\-.]{1,63}$|^arn:(aws).*:s3-outposts:[a-z\-0-9]+:[0-9]{12}:outpost[/:][a-zA-Z0-9\-]{1,63}[/:]accesspoint[/:][a-zA-Z0-9\-]{1,63}$"
@@ -941,7 +939,7 @@ class UserProcess(ProcUserMixin):
 
                 if status == 200:
                     break
-                elif status in REDIRECT_STATUS_CODES:
+                elif 300 <= status < 400:
                     raise UserSafeError(
                         "Health endpoint returned redirect response"
                     )
