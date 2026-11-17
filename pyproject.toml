@@ -10,7 +10,7 @@ dependencies = [
     "click",
     "aioboto3",
     "botocore",
-    "httpx",
+    "aiohttp",
 ]
 name = "sagemaker-shim"
 version = "0.9.0"

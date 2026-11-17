@@ -32,6 +32,18 @@ def pytest_sessionstart(session):
 
 
 @pytest.fixture
+def aiohttp_response(mocker):
+    """Build a stand-in for the context manager returned by session calls"""
+
+    def _build(*, status):
+        context_manager = mocker.MagicMock()
+        context_manager.__aenter__.return_value.status = status
+        return context_manager
+
+    return _build
+
+
+@pytest.fixture
 def client():
     sagemaker_shim.app.USER_PROCESS = UserProcess()
     sagemaker_shim.app.USER_PROCESS._healthy = True
