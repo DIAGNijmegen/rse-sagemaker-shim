@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from zipfile import BadZipFile
 
 import aioboto3
-import httpx
+import aiohttp
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
@@ -915,29 +915,31 @@ class UserProcess(ProcUserMixin):
             )
         except ZeroDivisionError:
             max_retries = 1
-        async with httpx.AsyncClient() as client:
+        call_timeout = aiohttp.ClientTimeout(
+            total=self.health_check_call_timeout.total_seconds()
+        )
+        async with aiohttp.ClientSession(timeout=call_timeout) as session:
             for _ in range(max_retries):
                 logger.info("Calling health endpoint")
                 try:
-                    response = await client.get(
+                    async with session.get(
                         f"http://127.0.0.1:{self.port}/health",
-                        timeout=self.health_check_call_timeout.total_seconds(),
-                    )
-                except httpx.TimeoutException:
+                        allow_redirects=False,
+                    ) as response:
+                        status = response.status
+                except TimeoutError:
                     continue
-                except httpx.ConnectError:
+                except aiohttp.ClientConnectorError:
                     await asyncio.sleep(
                         self.health_check_call_timeout.total_seconds()
                     )
                     continue
 
-                logger.info(
-                    f"Health endpoint returned status code {response.status_code}"
-                )
+                logger.info(f"Health endpoint returned status code {status}")
 
-                if response.status_code == 200:
+                if status == 200:
                     break
-                elif response.is_redirect:
+                elif 300 <= status < 400:
                     raise UserSafeError(
                         "Health endpoint returned redirect response"
                     )
@@ -1084,30 +1086,31 @@ class UserProcess(ProcUserMixin):
 
     async def invoke(self, *, timeout: timedelta) -> int:
         """Wait for the invoke endpoint to return 201"""
-        async with httpx.AsyncClient() as client:
+        invoke_timeout = aiohttp.ClientTimeout(total=timeout.total_seconds())
+        async with aiohttp.ClientSession(timeout=invoke_timeout) as session:
             try:
-                response = await client.post(
+                async with session.post(
                     f"http://127.0.0.1:{self.port}/invoke",
-                    timeout=timeout.total_seconds(),
-                )
-            except httpx.TimeoutException as error:
+                    allow_redirects=False,
+                ) as response:
+                    status = response.status
+            except TimeoutError as error:
                 self.mark_unhealthy()
                 raise UserSafeError("Invoke time limit exceeded") from error
-            except httpx.ConnectError as error:
+            except aiohttp.ClientConnectorError as error:
                 raise UserSafeError(
                     "Could not connect to invoke endpoint"
                 ) from error
-            except httpx.HTTPError as error:
+            except aiohttp.ClientError as error:
                 raise UserSafeError(
                     "HTTP error calling invoke endpoint"
                 ) from error
 
-            if response.status_code == 201:
+            if status == 201:
                 return_code = 0
             else:
                 logger.error(
-                    f"Invoke endpoint returned status {response.status_code}, "
-                    f"expected 201"
+                    f"Invoke endpoint returned status {status}, expected 201"
                 )
                 return_code = 1
 

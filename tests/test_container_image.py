@@ -1,12 +1,15 @@
+import asyncio
 import copy
+import json as jsonlib
 import sys
 from contextlib import contextmanager
 from importlib.metadata import version
 from time import sleep
+from typing import NamedTuple
 from uuid import uuid4
 
+import aiohttp
 import docker
-import httpx
 import pytest
 
 from tests import __version__
@@ -24,6 +27,31 @@ from tests.utils import (
 # https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-batch-code.html
 
 
+class Response(NamedTuple):
+    status_code: int
+    content: bytes
+
+    def json(self):
+        return jsonlib.loads(self.content)
+
+
+async def _request(*, method: str, url: str, json, timeout: float):
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=timeout)
+    ) as session:
+        async with session.request(method, url, json=json) as response:
+            return Response(
+                status_code=response.status, content=await response.read()
+            )
+
+
+def _http(*, method: str, url: str, json=None, timeout: float) -> Response:
+    # Container tests are synchronous, so each call runs its own event loop
+    return asyncio.run(
+        _request(method=method, url=url, json=json, timeout=timeout)
+    )
+
+
 def _wait_until_serving(
     *, base_url: str, attempts: int = 60, delay_seconds: float = 1.0
 ) -> None:
@@ -38,11 +66,15 @@ def _wait_until_serving(
     last_error = ""
     for _ in range(attempts):
         try:
-            response = httpx.get(f"{base_url}/execution-parameters", timeout=5)
+            response = _http(
+                method="GET",
+                url=f"{base_url}/execution-parameters",
+                timeout=5,
+            )
             if response.status_code == 200:
                 return
             last_error = f"status {response.status_code}"
-        except httpx.HTTPError as error:
+        except (aiohttp.ClientError, TimeoutError) as error:
             last_error = repr(error)
         sleep(delay_seconds)
 
@@ -155,7 +187,7 @@ def container():
     sys.platform != "linux", reason="does not run outside linux"
 )
 def test_container_responds_to_ping(container):
-    response = httpx.get(f"{container}/ping", timeout=30)
+    response = _http(method="GET", url=f"{container}/ping", timeout=30)
 
     # SageMaker waits for an HTTP 200 status code and an empty body
     # for a successful ping request before sending an invocations request.
@@ -168,7 +200,9 @@ def test_container_responds_to_ping(container):
     sys.platform != "linux", reason="does not run outside linux"
 )
 def test_container_responds_to_execution_parameters(container):
-    response = httpx.get(f"{container}/execution-parameters", timeout=30)
+    response = _http(
+        method="GET", url=f"{container}/execution-parameters", timeout=30
+    )
 
     assert response.json() == {
         "MaxConcurrentTransforms": 1,
@@ -193,7 +227,12 @@ def test_invocations_endpoint(local_s3, container):
         "output_prefix": f"test/{pk}",
         "timeout": "PT10S",
     }
-    response = httpx.post(f"{container}/invocations", json=data, timeout=30)
+    response = _http(
+        method="POST",
+        url=f"{container}/invocations",
+        json=data,
+        timeout=30,
+    )
 
     # To obtain inferences, Amazon SageMaker sends a POST request to the
     # inference container. The POST request body contains data from
@@ -226,7 +265,12 @@ def test_alpine_image(local_s3):
             "output_prefix": f"test/{pk}",
             "timeout": "PT10S",
         }
-        response = httpx.post(f"{base_url}/invocations", json=data, timeout=30)
+        response = _http(
+            method="POST",
+            url=f"{base_url}/invocations",
+            json=data,
+            timeout=30,
+        )
 
         response = response.json()
 
