@@ -10,7 +10,7 @@ dependencies = [
     "click",
     "aioboto3",
     "botocore",
-    "httpx",
+    "aiohttp",
 ]
 name = "sagemaker-shim"
 version = "0.9.0"
@@ -41,6 +41,7 @@ dev = [
     "pytest-asyncio",
     "types-aioboto3[s3]",
     "types-aiofiles",
+    "httpx2",  # Required for starlette.testclient
 ]
 
 [tool.uv]

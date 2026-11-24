@@ -10,7 +10,6 @@ from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
 
-import httpx
 import pytest
 
 from sagemaker_shim.logging import LOGGING_CONFIG
@@ -534,10 +533,12 @@ async def test_exec_duration_set(
 
 
 @pytest.mark.asyncio
-async def test_invoke_duration_set(local_s3, tmp_path, mocker, monkeypatch):
+async def test_invoke_duration_set(
+    local_s3, tmp_path, mocker, aiohttp_response, monkeypatch
+):
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.post",
-        return_value=httpx.Response(201),
+        "sagemaker_shim.models.aiohttp.ClientSession.post",
+        return_value=aiohttp_response(status=201),
     )
     pk = str(uuid4())
     signing_key = secrets.token_hex()

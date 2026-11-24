@@ -10,9 +10,10 @@ import tarfile
 from contextlib import nullcontext
 from datetime import timedelta
 from pathlib import Path
+from unittest.mock import MagicMock
 from uuid import uuid4
 
-import httpx
+import aiohttp
 import pytest
 
 from sagemaker_shim.exceptions import UserSafeError
@@ -882,10 +883,12 @@ def test_user_process_api_method(monkeypatch):
     ],
 )
 @pytest.mark.asyncio
-async def test_health_check(mocker, status_code, expectation):
+async def test_health_check(
+    mocker, aiohttp_response, status_code, expectation
+):
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.get",
-        return_value=httpx.Response(status_code),
+        "sagemaker_shim.models.aiohttp.ClientSession.get",
+        return_value=aiohttp_response(status=status_code),
     )
 
     p = UserProcess()
@@ -925,18 +928,23 @@ async def test_invoke_start_and_health_timeout(monkeypatch, capsys):
 
 
 @pytest.mark.parametrize(
-    "patch_kwargs",
+    "status, error",
     [
-        {"return_value": httpx.Response(100)},
-        {"side_effect": httpx.ConnectError("error")},
+        (100, None),
+        (None, aiohttp.ClientConnectorError(MagicMock(), OSError("error"))),
     ],
 )
 @pytest.mark.asyncio
 async def test_invoke_start_and_health_call_timeout_sleep(
-    mocker, monkeypatch, patch_kwargs, capsys
+    mocker, aiohttp_response, monkeypatch, status, error, capsys
 ):
+    if error is None:
+        patch_kwargs = {"return_value": aiohttp_response(status=status)}
+    else:
+        patch_kwargs = {"side_effect": error}
+
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.get",
+        "sagemaker_shim.models.aiohttp.ClientSession.get",
         **patch_kwargs,
     )
     monkeypatch.setenv(
@@ -971,10 +979,12 @@ async def test_invoke_start_and_health_call_timeout_sleep(
 
 
 @pytest.mark.asyncio
-async def test_invoke_setup_and_teardown(mocker, monkeypatch, capsys):
+async def test_invoke_setup_and_teardown(
+    mocker, aiohttp_response, monkeypatch, capsys
+):
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.get",
-        return_value=httpx.Response(200),
+        "sagemaker_shim.models.aiohttp.ClientSession.get",
+        return_value=aiohttp_response(status=200),
     )
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
@@ -1070,10 +1080,10 @@ async def test_invoke_call_timeout(local_s3, monkeypatch, capsys):
 
 
 @pytest.mark.asyncio
-async def test_invoke_returns_0_on_201(mocker, monkeypatch):
+async def test_invoke_returns_0_on_201(mocker, aiohttp_response, monkeypatch):
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.post",
-        return_value=httpx.Response(201),
+        "sagemaker_shim.models.aiohttp.ClientSession.post",
+        return_value=aiohttp_response(status=201),
     )
     process = UserProcess()
 
@@ -1085,19 +1095,23 @@ async def test_invoke_returns_0_on_201(mocker, monkeypatch):
 @pytest.mark.parametrize(
     "client_kwargs, expectation",
     [
-        ({"return_value": httpx.Response(201)}, nullcontext()),
+        ({"return_value": 201}, nullcontext()),
         (
-            {"side_effect": httpx.TimeoutException("error")},
+            {"side_effect": TimeoutError("error")},
             pytest.raises(UserSafeError, match="Invoke time limit exceeded"),
         ),
         (
-            {"side_effect": httpx.ConnectError("error")},
+            {
+                "side_effect": aiohttp.ClientConnectorError(
+                    MagicMock(), OSError("error")
+                )
+            },
             pytest.raises(
                 UserSafeError, match="Could not connect to invoke endpoint"
             ),
         ),
         (
-            {"side_effect": httpx.HTTPError("error")},
+            {"side_effect": aiohttp.ClientError("error")},
             pytest.raises(
                 UserSafeError, match="HTTP error calling invoke endpoint"
             ),
@@ -1105,9 +1119,18 @@ async def test_invoke_returns_0_on_201(mocker, monkeypatch):
     ],
 )
 @pytest.mark.asyncio
-async def test_invoke_raises(mocker, monkeypatch, client_kwargs, expectation):
+async def test_invoke_raises(
+    mocker, aiohttp_response, monkeypatch, client_kwargs, expectation
+):
+    if "return_value" in client_kwargs:
+        client_kwargs = {
+            "return_value": aiohttp_response(
+                status=client_kwargs["return_value"]
+            )
+        }
+
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.post",
+        "sagemaker_shim.models.aiohttp.ClientSession.post",
         **client_kwargs,
     )
     process = UserProcess()
@@ -1117,10 +1140,12 @@ async def test_invoke_raises(mocker, monkeypatch, client_kwargs, expectation):
 
 
 @pytest.mark.asyncio
-async def test_invoke_result_duration(local_s3, mocker, monkeypatch):
+async def test_invoke_result_duration(
+    local_s3, mocker, aiohttp_response, monkeypatch
+):
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.post",
-        return_value=httpx.Response(201),
+        "sagemaker_shim.models.aiohttp.ClientSession.post",
+        return_value=aiohttp_response(status=201),
     )
     process = UserProcess()
     pk = str(uuid4())
@@ -1235,15 +1260,15 @@ async def test_user_process_last_stderr_lines(
 
 @pytest.mark.asyncio
 async def test_user_process_last_stderr_lines_invoke(
-    local_s3, mocker, monkeypatch, capsys
+    local_s3, mocker, aiohttp_response, monkeypatch, capsys
 ):
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.get",
-        return_value=httpx.Response(200),
+        "sagemaker_shim.models.aiohttp.ClientSession.get",
+        return_value=aiohttp_response(status=200),
     )
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.post",
-        return_value=httpx.Response(500),
+        "sagemaker_shim.models.aiohttp.ClientSession.post",
+        return_value=aiohttp_response(status=500),
     )
     cmd = [
         "bash",
@@ -1295,11 +1320,11 @@ async def test_user_process_last_stderr_lines_invoke(
 @pytest.mark.parametrize("api_method", ("exec", "invoke"))
 @pytest.mark.asyncio
 async def test_user_process_healthy_after_setup(
-    mocker, monkeypatch, api_method
+    mocker, aiohttp_response, monkeypatch, api_method
 ):
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.get",
-        return_value=httpx.Response(200),
+        "sagemaker_shim.models.aiohttp.ClientSession.get",
+        return_value=aiohttp_response(status=200),
     )
     monkeypatch.setenv(
         "GRAND_CHALLENGE_COMPONENT_CMD_B64J",
@@ -1357,8 +1382,8 @@ async def test_user_process_unhealthy_after_inference_timeout(
 @pytest.mark.asyncio
 async def test_user_process_unhealthy_after_invoke_timeout(mocker):
     mocker.patch(
-        "sagemaker_shim.models.httpx.AsyncClient.post",
-        side_effect=httpx.TimeoutException("error"),
+        "sagemaker_shim.models.aiohttp.ClientSession.post",
+        side_effect=TimeoutError("error"),
     )
     process = UserProcess()
     process._healthy = True
